@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "npm run dev --workspace @lacuna/web",
     "build": "npm run build --workspace @lacuna/web",
-    "lacuna": "node apps/cli/src/index.ts",
+    "lacuna": "node --experimental-strip-types apps/cli/src/index.ts",
     "check:manifest": "npm run lacuna -- check-manifest",
     "verify:mainnet": "npm run lacuna -- verify-mainnet",
     "typecheck": "npm run typecheck --workspaces --if-present",

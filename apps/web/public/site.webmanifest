@@ -1,0 +1,16 @@
+{
+  "name": "Lacuna",
+  "short_name": "Lacuna",
+  "description": "A visibility-first STRK20 privacy development studio.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#050608",
+  "theme_color": "#050608",
+  "icons": [
+    {
+      "src": "/brand/lacuna-mark.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

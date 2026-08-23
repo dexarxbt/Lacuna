@@ -1,6 +1,16 @@
 import assert from 'node:assert/strict'
+import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import test from 'node:test'
-import { parseSubmissionManifest, verifyMainnetManifest, verifyTransactionReceipt, type RpcTransport } from '../src/index.ts'
+import {
+  parseSubmissionManifest,
+  validateManifestEvidence,
+  verifyMainnetManifest,
+  verifyTransactionReceipt,
+  writeVerificationArtifacts,
+  type RpcTransport,
+} from '../src/index.ts'
 
 const pool = '0x040337b1af3c663e86e333bab5a4b28da8d4652a15a69beee2b677776ffe812a'
 
@@ -30,6 +40,18 @@ test('rejects duplicate hashes instead of silently changing the manifest', () =>
   assert.match(result.errors.join(' '), /duplicates/)
 })
 
+test('requires every listed manifest hash to have committed verified evidence', async () => {
+  const verified = await verifyTransactionReceipt('0xabc', async () => receipt())
+  assert.deepEqual(validateManifestEvidence(
+    { transactions: ['0xabc'] },
+    { evidence: [verified.evidence] },
+  ), [])
+  assert.match(validateManifestEvidence(
+    { transactions: ['0xdef'] },
+    { evidence: [verified.evidence] },
+  ).join(' '), /has no committed verified evidence/)
+})
+
 test('verifies a succeeded receipt that emitted from the mainnet pool', async () => {
   const rpc: RpcTransport = async () => receipt()
   const result = await verifyTransactionReceipt('0xabc', rpc, '2026-08-23T00:00:00.000Z')
@@ -54,4 +76,30 @@ test('refuses a non-mainnet RPC before reading receipts', async () => {
     verifyMainnetManifest({ transactions: ['0x1', '0x2', '0x3'] }, rpc),
     /not Starknet Mainnet/,
   )
+})
+
+test('refuses to write any artifact when a verification result failed', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'lacuna-cli-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const failed = await verifyTransactionReceipt('0xabc', async () => receipt('0x123'))
+
+  await assert.rejects(writeVerificationArtifacts(root, [failed]), /Refusing to write failed/)
+  await assert.rejects(readFile(join(root, 'verification', 'mainnet', 'transaction-index.json')))
+})
+
+test('successful artifact writes replace stale receipts', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'lacuna-cli-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const first = await verifyTransactionReceipt('0xabc', async () => receipt())
+  const second = await verifyTransactionReceipt('0xdef', async () => receipt())
+
+  await writeVerificationArtifacts(root, [first])
+  await writeVerificationArtifacts(root, [second])
+
+  const evidenceDirectory = join(root, 'verification', 'mainnet')
+  assert.deepEqual(await readdir(join(evidenceDirectory, 'receipts')), ['0xdef.json'])
+  const index = JSON.parse(await readFile(join(evidenceDirectory, 'transaction-index.json'), 'utf8')) as {
+    evidence: Array<{ transactionHash: string }>
+  }
+  assert.deepEqual(index.evidence.map(({ transactionHash }) => transactionHash), ['0xdef'])
 })

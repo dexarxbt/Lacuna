@@ -132,7 +132,7 @@ export function Studio() {
         <p className="kicker">02 / THE STUDIO</p>
         <div>
           <h2>Trace the boundary before anything signs.</h2>
-          <p>Select an action to inspect its disclosures, protocol checks, wallet requirements, and generated integration shape.</p>
+          <p>Select an action to inspect its disclosures, protocol checks, wallet requirements, and conceptual integration pseudocode.</p>
         </div>
       </div>
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { dirname, join, resolve } from 'node:path'
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import {
   isTransactionHash,
@@ -77,6 +77,49 @@ export function parseSubmissionManifest(value: unknown, requireComplete = false)
 
   if (requireComplete) errors.push(...validateSubmissionManifest(manifest))
   return { manifest, errors }
+}
+
+export function validateManifestEvidence(
+  manifest: SubmissionManifest,
+  value: unknown,
+): string[] {
+  if (!isRecord(value) || !Array.isArray(value.evidence)) {
+    return ['verification/mainnet/transaction-index.json must contain an evidence array.']
+  }
+
+  const errors: string[] = []
+  const records: TransactionEvidence[] = []
+  for (const [index, candidate] of value.evidence.entries()) {
+    const parsed = parseTransactionEvidence(candidate)
+    if (!parsed.ok) {
+      errors.push(...parsed.errors.map((error) => `Evidence record ${index + 1}: ${error}`))
+      continue
+    }
+    if (!isVerified(parsed.evidence)) {
+      errors.push(`Evidence record ${index + 1} has not passed every required check.`)
+    }
+    records.push(parsed.evidence)
+  }
+
+  const manifestHashes = manifest.transactions.map((hash) => hash.toLowerCase())
+  const evidenceHashes = records.map(({ transactionHash }) => transactionHash.toLowerCase())
+  if (new Set(evidenceHashes).size !== evidenceHashes.length) {
+    errors.push('Verified evidence must not contain duplicate transaction hashes.')
+  }
+
+  const manifestSet = new Set(manifestHashes)
+  const evidenceSet = new Set(evidenceHashes)
+  for (const hash of manifestHashes) {
+    if (!evidenceSet.has(hash)) errors.push(`Manifest transaction ${hash} has no committed verified evidence.`)
+  }
+  for (const hash of evidenceHashes) {
+    if (!manifestSet.has(hash)) errors.push(`Committed evidence ${hash} is not listed in strk20.json.`)
+  }
+
+  if ((manifest.demo_url !== undefined || manifest.demo_video !== undefined) && manifest.transactions.length < 3) {
+    errors.push('Submission metadata requires at least three verified mainnet transaction hashes.')
+  }
+  return errors
 }
 
 export function createRpcTransport(
@@ -196,17 +239,39 @@ export async function writeVerificationArtifacts(
   root: string,
   results: ReceiptVerification[],
 ): Promise<void> {
+  const failed = results.find(({ evidence, errors }) => errors.length > 0 || !isVerified(evidence))
+  if (failed) {
+    throw new Error(`Refusing to write failed verification result ${failed.evidence.transactionHash}.`)
+  }
+
+  const hashes = results.map(({ evidence }) => evidence.transactionHash.toLowerCase())
+  if (new Set(hashes).size !== hashes.length) {
+    throw new Error('Refusing to write duplicate verification results.')
+  }
+
   const directory = join(root, 'verification', 'mainnet')
   const receiptsDirectory = join(directory, 'receipts')
-  await mkdir(receiptsDirectory, { recursive: true })
+  const nextReceiptsDirectory = join(directory, '.receipts-next')
+  const indexPath = join(directory, 'transaction-index.json')
+  const nextIndexPath = join(directory, '.transaction-index.next.json')
+  await mkdir(directory, { recursive: true })
+  await rm(nextReceiptsDirectory, { recursive: true, force: true })
+  await mkdir(nextReceiptsDirectory)
 
   for (const result of results) {
     const fileName = `${result.evidence.transactionHash.toLowerCase()}.json`
-    await writeFile(join(receiptsDirectory, fileName), `${JSON.stringify(result.receipt, null, 2)}\n`, 'utf8')
+    await writeFile(join(nextReceiptsDirectory, fileName), `${JSON.stringify(result.receipt, null, 2)}\n`, 'utf8')
   }
+  await writeFile(
+    nextIndexPath,
+    `${JSON.stringify({ evidence: results.map(({ evidence }) => evidence) }, null, 2)}\n`,
+    'utf8',
+  )
 
-  const evidence = results.filter(({ evidence }) => isVerified(evidence)).map(({ evidence: record }) => record)
-  await writeFile(join(directory, 'transaction-index.json'), `${JSON.stringify({ evidence }, null, 2)}\n`, 'utf8')
+  await rm(receiptsDirectory, { recursive: true, force: true })
+  await rename(nextReceiptsDirectory, receiptsDirectory)
+  await rm(indexPath, { force: true })
+  await rename(nextIndexPath, indexPath)
 }
 
 async function readJson(filePath: string): Promise<unknown> {
@@ -226,7 +291,14 @@ async function main(): Promise<void> {
   }
 
   if (command === 'check-manifest') {
-    console.log(`strk20.json is valid (${parsed.manifest.transactions.length} transaction hashes).`)
+    const evidencePath = join(root, 'verification', 'mainnet', 'transaction-index.json')
+    const evidenceErrors = validateManifestEvidence(parsed.manifest, await readJson(evidencePath))
+    if (evidenceErrors.length > 0) {
+      for (const error of evidenceErrors) console.error(`error: ${error}`)
+      process.exitCode = 1
+      return
+    }
+    console.log(`strk20.json and committed evidence agree (${parsed.manifest.transactions.length} transaction hashes).`)
     return
   }
 
@@ -243,10 +315,15 @@ async function main(): Promise<void> {
     result.errors.forEach((error) => console.error(`  ${error}`))
   }
 
-  if (results.some(({ evidence }) => !isVerified(evidence))) process.exitCode = 1
+  const hasFailures = results.some(({ evidence, errors }) => errors.length > 0 || !isVerified(evidence))
+  if (hasFailures) process.exitCode = 1
   if (process.argv.includes('--write')) {
-    await writeVerificationArtifacts(root, results)
-    console.log(`Wrote verified evidence under ${join('verification', 'mainnet')}.`)
+    if (hasFailures) {
+      console.error('Refusing to write evidence because one or more receipt checks failed.')
+    } else {
+      await writeVerificationArtifacts(root, results)
+      console.log(`Wrote verified evidence under ${join('verification', 'mainnet')}.`)
+    }
   }
 }
 

@@ -1,11 +1,5 @@
 import { LacunaMark } from './components/LacunaMark'
-
-const disclosures = [
-  { label: 'Transfer amount', state: 'Private', tone: 'private' },
-  { label: 'Pool interaction', state: 'Public', tone: 'public' },
-  { label: 'Execution timing', state: 'Public', tone: 'public' },
-  { label: 'Recipient identity', state: 'Wallet-held', tone: 'private' },
-]
+import { Studio } from './features/studio/Studio'
 
 export function App() {
   return (
@@ -72,46 +66,7 @@ export function App() {
           </div>
         </section>
 
-        <section className="studio-section wrap" id="studio">
-          <div className="studio-window">
-            <div className="studio-topbar">
-              <div className="mini-brand"><LacunaMark /><span>shielded-transfer</span></div>
-              <div className="network"><i /> SN_MAIN</div>
-              <button type="button" disabled>Connect wallet</button>
-            </div>
-            <div className="studio-body">
-              <aside className="recipe-rail">
-                <span className="panel-label">RECIPE</span>
-                <button className="active" type="button"><i /> Shielded transfer</button>
-                <button type="button"><i /> Private invoke</button>
-                <button type="button"><i /> Withdrawal</button>
-              </aside>
-              <div className="graph-canvas">
-                <div className="graph-grid" />
-                <div className="flow-node node-a"><span>01</span><small>PUBLIC ENTRY</small><strong>Deposit</strong><i /></div>
-                <div className="flow-line line-a" />
-                <div className="flow-node node-b selected"><span>02</span><small>PRIVATE ACTION</small><strong>Transfer</strong><i /></div>
-                <div className="flow-line line-b" />
-                <div className="flow-node node-c"><span>03</span><small>VERIFICATION</small><strong>Receipt</strong><i /></div>
-              </div>
-              <aside className="inspector" id="boundary">
-                <span className="panel-label">VISIBILITY</span>
-                <h3>Private transfer</h3>
-                <p>What an observer can infer from this action.</p>
-                <div className="disclosure-list">
-                  {disclosures.map((item) => (
-                    <div key={item.label}>
-                      <span>{item.label}</span>
-                      <strong className={item.tone}>{item.state}</strong>
-                    </div>
-                  ))}
-                </div>
-                <div className="constraint"><i /> One external privacy invoke allowed</div>
-              </aside>
-            </div>
-            <div className="timeline"><span className="complete" /><b>Prepared</b><span /><b>Wallet confirmation</b><span /><b>Proving</b><span /><b>Verified</b></div>
-          </div>
-        </section>
+        <Studio />
       </main>
 
       <footer className="wrap footer">

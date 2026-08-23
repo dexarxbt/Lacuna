@@ -17,7 +17,7 @@ function verifiedEvidence(hash: string): TransactionEvidence {
     poolAddress: STRK20_MAINNET_POOL,
     operation: 'private-transfer',
     blockNumber: 1,
-    actualFeeStrk: '3.2',
+    actualFee: { amount: '3.2', unit: 'FRI' },
     verifiedAt: '2026-08-23T00:00:00.000Z',
     explorerUrl: `https://voyager.online/tx/${hash}`,
     checks: [

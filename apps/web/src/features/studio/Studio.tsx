@@ -8,6 +8,7 @@ import {
   type Visibility,
 } from '@lacuna/recipe-engine'
 import { LacunaMark } from '../../components/LacunaMark'
+import { WalletDoctor } from '../wallet-doctor/WalletDoctor'
 
 const previewCapabilities: Capability[] = [
   'strk20Balances',
@@ -139,7 +140,7 @@ export function Studio() {
         <div className="studio-topbar">
           <div className="mini-brand"><LacunaMark /><span>{activeRecipe.id}</span></div>
           <div className="network"><i /> SN_MAIN · PROTOCOL PREVIEW</div>
-          <button className="preview-status" type="button" disabled>Wallet not connected</button>
+          <WalletDoctor />
         </div>
 
         <div className="studio-body interactive-body">

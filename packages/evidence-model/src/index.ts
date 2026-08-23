@@ -12,9 +12,12 @@ export type TransactionEvidence = {
   transactionHash: string
   chainId: typeof STARKNET_MAINNET_CHAIN_ID
   poolAddress: typeof STRK20_MAINNET_POOL
-  operation: 'shield' | 'private-transfer' | 'private-invoke' | 'withdraw' | 'register'
+  operation: 'shield' | 'private-transfer' | 'private-invoke' | 'withdraw' | 'register' | 'unclassified-pool-interaction'
+  actualFee: {
+    amount: string
+    unit: string
+  }
   blockNumber: number
-  actualFeeStrk: string
   verifiedAt: string
   checks: VerificationCheck[]
   explorerUrl: string
@@ -50,11 +53,17 @@ export function parseTransactionEvidence(value: unknown): EvidenceParseResult {
   if (!isTransactionHash(value.transactionHash)) errors.push('Transaction hash must be a Starknet hex value.')
   if (value.chainId !== STARKNET_MAINNET_CHAIN_ID) errors.push('Evidence must target Starknet Mainnet.')
   if (value.poolAddress !== STRK20_MAINNET_POOL) errors.push('Evidence must reference the verified STRK20 mainnet pool.')
-  if (!['shield', 'private-transfer', 'private-invoke', 'withdraw', 'register'].includes(String(value.operation))) {
+  if (!['shield', 'private-transfer', 'private-invoke', 'withdraw', 'register', 'unclassified-pool-interaction'].includes(String(value.operation))) {
     errors.push('Operation is not recognized.')
   }
+  if (!isObject(value.actualFee)
+    || typeof value.actualFee.amount !== 'string'
+    || !DECIMAL_PATTERN.test(value.actualFee.amount)
+    || typeof value.actualFee.unit !== 'string'
+    || value.actualFee.unit.length === 0) {
+    errors.push('Actual fee must include a decimal amount and unit.')
+  }
   if (!Number.isSafeInteger(value.blockNumber) || Number(value.blockNumber) < 0) errors.push('Block number must be a non-negative integer.')
-  if (typeof value.actualFeeStrk !== 'string' || !DECIMAL_PATTERN.test(value.actualFeeStrk)) errors.push('Actual fee must be a decimal STRK string.')
   if (typeof value.verifiedAt !== 'string' || Number.isNaN(Date.parse(value.verifiedAt))) errors.push('Verification time must be an ISO date string.')
   if (typeof value.explorerUrl !== 'string' || !value.explorerUrl.startsWith('https://')) errors.push('Explorer URL must use HTTPS.')
 

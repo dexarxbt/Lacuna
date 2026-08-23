@@ -1,0 +1,20 @@
+{
+  "name": "lacuna",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace @lacuna/web",
+    "build": "npm run build --workspace @lacuna/web",
+    "typecheck": "npm run typecheck --workspace @lacuna/web",
+    "verify": "npm run typecheck && npm run build"
+  },
+  "engines": {
+    "node": ">=22.0.0",
+    "npm": ">=10.0.0"
+  }
+}

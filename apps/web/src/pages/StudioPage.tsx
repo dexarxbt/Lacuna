@@ -32,7 +32,7 @@ export function StudioPage() {
           <div><dt>PROTOCOL</dt><dd>STRK20</dd></div>
           <div><dt>MODE</dt><dd><i className="context-dot readonly" /> INSPECTION ONLY</dd></div>
           <div><dt>EXECUTION</dt><dd><i className="context-dot locked" /> LOCKED</dd></div>
-          <div><dt>EVIDENCE</dt><dd>0 / 3 COMMITTED</dd></div>
+          <div><dt>EVIDENCE</dt><dd>3 / 3 COMMITTED</dd></div>
         </dl>
       </section>
 

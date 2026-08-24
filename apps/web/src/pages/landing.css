@@ -196,13 +196,12 @@
 }
 
 .landing-boundary-artwork .boundary-node-evidence circle:first-child {
-  fill: rgba(145, 167, 255, .05);
-  stroke: rgba(145, 167, 255, .72);
-  stroke-dasharray: 4 4;
+  fill: rgba(180, 248, 200, .05);
+  stroke: rgba(180, 248, 200, .72);
 }
-.landing-boundary-artwork .boundary-node-evidence .pending-core { fill: var(--signal); opacity: .68; }
-.landing-boundary-artwork .boundary-node-evidence path { fill: none; stroke: var(--signal); stroke-width: 2; stroke-linecap: round; }
-.landing-boundary-artwork .evidence-card b { color: var(--signal); }
+.landing-boundary-artwork .boundary-node-evidence .verified-core { fill: var(--private); opacity: .92; }
+.landing-boundary-artwork .boundary-node-evidence path { fill: none; stroke: var(--private); stroke-width: 2; stroke-linecap: round; }
+.landing-boundary-artwork .evidence-card b { color: var(--private); }
 .landing-boundary-artwork .visual-card {
   animation:
     landing-card-enter .85s cubic-bezier(.2, .75, .2, 1) .7s both,
@@ -318,10 +317,10 @@
 .wallet-visual i:first-child { top: 15px; left: 36px; }
 .wallet-visual i:last-child { right: 24px; bottom: 19px; background: var(--private); box-shadow: 0 0 14px var(--private); }
 .evidence-visual { display: grid; place-content: center; gap: 9px; }
-.evidence-visual::before { content: "PENDING"; position: absolute; top: 35px; left: 50%; padding: 12px 16px; border: 1px solid rgba(145, 167, 255, .4); border-radius: 999px; color: var(--signal); background: rgba(145, 167, 255, .04); font: 9px/1 ui-monospace, monospace; letter-spacing: .15em; transform: translateX(-50%); }
+.evidence-visual::before { content: "VERIFIED"; position: absolute; top: 35px; left: 50%; padding: 12px 16px; border: 1px solid rgba(180, 248, 200, .4); border-radius: 999px; color: var(--private); background: rgba(180, 248, 200, .04); font: 9px/1 ui-monospace, monospace; letter-spacing: .15em; transform: translateX(-50%); }
 .evidence-visual i { width: 190px; height: 4px; border-radius: 4px; background: #25303c; }
 .evidence-visual i:nth-child(2) { width: 140px; }
-.evidence-visual i:nth-child(3) { width: 90px; background: rgba(145, 167, 255, .42); }
+.evidence-visual i:nth-child(3) { width: 90px; background: rgba(180, 248, 200, .42); }
 
 .landing-flow {
   position: relative;

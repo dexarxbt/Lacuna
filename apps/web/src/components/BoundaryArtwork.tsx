@@ -1,7 +1,7 @@
 export function BoundaryArtwork() {
   return (
     <figure
-      aria-label="Concept model of a public STRK20 request crossing a private path toward receipt evidence that is still pending"
+      aria-label="Concept model of a public STRK20 request crossing a private path toward verified receipt evidence"
       className="privacy-plane boundary-artwork landing-boundary-artwork"
       role="img"
     >
@@ -32,7 +32,7 @@ export function BoundaryArtwork() {
           <circle r="34" /><path d="M0 -12 L12 0 L0 12 L-12 0 Z" />
         </g>
         <g className="boundary-node boundary-node-evidence" transform="translate(1128 176)">
-          <circle r="24" /><circle className="pending-core" r="7" /><path d="M0 -14 V-9 M0 9 V14" />
+          <circle r="24" /><circle className="verified-core" r="7" /><path d="M0 -14 V-9 M0 9 V14" />
         </g>
         <circle className="flow-particle particle-one" r="5" />
         <circle className="flow-particle particle-two" r="3" />
@@ -42,7 +42,7 @@ export function BoundaryArtwork() {
         <span>REQUEST / PUBLIC</span><b>shielded transfer intent</b><i /><i /><i />
       </div>
       <div className="visual-card evidence-card" aria-hidden="true">
-        <span>MAINNET EVIDENCE</span><b>pending</b><i /><i />
+        <span>MAINNET EVIDENCE</span><b>3 / 3 verified</b><i /><i />
       </div>
       <div className="aperture" aria-hidden="true">
         <span className="aperture-left" />
@@ -50,7 +50,7 @@ export function BoundaryArtwork() {
         <span className="aperture-right" />
       </div>
       <figcaption>
-        Concept model: public request → private path → verifiable receipt. Accepted mainnet evidence is pending.
+        Concept model: public request → private path → verifiable receipt. Three accepted Mainnet receipts are committed.
       </figcaption>
     </figure>
   )

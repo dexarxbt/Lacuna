@@ -40,7 +40,7 @@ const productCheckpoints = [
   { name: 'Probe', status: 'READ-ONLY', tone: 'readonly' },
   { name: 'Simulate', status: 'GATED', tone: 'gated' },
   { name: 'Review', status: 'LOCKED', tone: 'locked' },
-  { name: 'Verify', status: 'EVIDENCE PENDING', tone: 'pending' },
+  { name: 'Verify', status: 'EVIDENCE COMMITTED', tone: 'ready' },
 ] as const
 
 function codePreview(step: AnalyzedStep): string {

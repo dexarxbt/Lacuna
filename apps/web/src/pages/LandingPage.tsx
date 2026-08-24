@@ -41,9 +41,9 @@ const checkpoints = [
   },
   {
     name: 'Verify',
-    status: 'IMPLEMENTED · EVIDENCE PENDING',
-    tone: 'pending',
-    detail: 'Verify accepted receipts and export public evidence after execution.',
+    status: 'IMPLEMENTED · 3 RECEIPTS',
+    tone: 'ready',
+    detail: 'Verify accepted receipts and export public evidence; three Mainnet pool interactions are committed.',
   },
 ] as const
 
@@ -86,9 +86,9 @@ const capabilities = [
   },
   {
     capability: 'Mainnet receipt evidence',
-    status: 'TARGET: 3 ACCEPTED · CURRENT: 0',
-    tone: 'pending',
-    detail: 'The verifier and export path are tested; the public evidence index is empty.',
+    status: '3 / 3 ACCEPTED · COMMITTED',
+    tone: 'ready',
+    detail: 'Three accepted Mainnet receipts are committed in the public evidence index.',
   },
 ] as const
 
@@ -137,7 +137,7 @@ export function LandingPage() {
           <p className="landing-hero-copy">
             Inspect supported STRK20 recipes, disclosure boundaries, protocol constraints,
             and wallet capabilities before signing. Execution stays locked in the studio;
-            accepted mainnet evidence is still pending.
+            three accepted Mainnet pool receipts are verified and committed.
           </p>
           <div className="landing-actions">
             <a className="button primary" href="/studio">Launch studio <span aria-hidden="true">↗</span></a>
@@ -152,7 +152,7 @@ export function LandingPage() {
           <div><span>TARGET</span><strong>Starknet Mainnet</strong></div>
           <div><span>PROTOCOL</span><strong>STRK20</strong></div>
           <div><span>STUDIO</span><strong className="status-locked">Execution locked</strong></div>
-          <div><span>EVIDENCE</span><strong className="status-pending">3 accepted mainnet transactions pending</strong></div>
+          <div><span>EVIDENCE</span><strong className="status-ready">3 / 3 Mainnet receipts committed</strong></div>
         </div>
       </section>
 
@@ -183,7 +183,7 @@ export function LandingPage() {
             <div className="landing-problem-visual evidence-visual" aria-hidden="true"><i /><i /><i /></div>
             <p className="landing-card-index">03 / EVIDENCE</p>
             <h3>Implemented is not accepted</h3>
-            <p>Receipt verification can work while the accepted mainnet evidence set remains empty.</p>
+            <p>Receipt verification now anchors three accepted Mainnet pool interactions in public evidence.</p>
           </article>
         </div>
       </section>
@@ -195,7 +195,7 @@ export function LandingPage() {
             <h2 id="flow-title">From recipe to receipt, every stop has a status</h2>
             <p>
               Lacuna separates what can be inspected now, what remains gated, and what
-              still needs accepted mainnet evidence.
+              is backed by accepted Mainnet receipt evidence.
             </p>
           </div>
           <ol className="landing-checkpoints">

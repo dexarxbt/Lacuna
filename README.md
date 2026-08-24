@@ -37,9 +37,9 @@ Lacuna brings that reasoning into one focused workspace:
 | Submission adapter | Consent-gated; intentionally locked in the studio |
 | Mainnet receipt verifier and evidence export | Implemented and tested |
 | Three verified mainnet pool transactions | Pending |
-| Public production deployment | Pending |
+| Public production deployment | Live at [lacuna-strk.vercel.app](https://lacuna-strk.vercel.app/) |
 
-Lacuna does not claim mainnet completion yet. Root `strk20.json` and the public evidence index remain empty until real transactions pass public RPC receipt validation.
+Lacuna does not claim mainnet completion yet. The transaction list in root `strk20.json` and the public evidence index remain empty until real transactions pass public RPC receipt validation.
 
 ## Product flow
 

@@ -82,7 +82,7 @@ export function WalletDoctor() {
           <div className="doctor-header">
             <div>
               <span className="panel-label">CAPABILITY DOCTOR</span>
-              <h3>Inspect, never assume.</h3>
+              <h3>Inspect, never assume</h3>
             </div>
             <button aria-label="Close wallet doctor" className="doctor-close" onClick={close} type="button">×</button>
           </div>

@@ -116,9 +116,6 @@ export function validateManifestEvidence(
     if (!manifestSet.has(hash)) errors.push(`Committed evidence ${hash} is not listed in strk20.json.`)
   }
 
-  if ((manifest.demo_url !== undefined || manifest.demo_video !== undefined) && manifest.transactions.length < 3) {
-    errors.push('Submission metadata requires at least three verified mainnet transaction hashes.')
-  }
   return errors
 }
 

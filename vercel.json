@@ -3,7 +3,8 @@
   "outputDirectory": "apps/web/dist",
   "framework": "vite",
   "rewrites": [
-    { "source": "/(.*)", "destination": "/index.html" }
+    { "source": "/studio", "destination": "/studio/index.html" },
+    { "source": "/studio/", "destination": "/studio/index.html" }
   ],
   "headers": [
     {

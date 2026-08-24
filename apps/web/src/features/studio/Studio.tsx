@@ -131,7 +131,7 @@ export function Studio() {
       <div className="studio-intro">
         <p className="kicker">02 / THE STUDIO</p>
         <div>
-          <h2>Trace the boundary before anything signs.</h2>
+          <h2>Trace the boundary before anything signs</h2>
           <p>Select an action to inspect its disclosures, protocol checks, wallet requirements, and conceptual integration pseudocode.</p>
         </div>
       </div>
@@ -167,6 +167,12 @@ export function Studio() {
 
           <div className="recipe-canvas" aria-label={`${activeRecipe.name} action graph`}>
             <div className="graph-grid" />
+            <div aria-hidden="true" className="canvas-depth-art">
+              <span className="depth-ring depth-ring-one" />
+              <span className="depth-ring depth-ring-two" />
+              <span className="depth-beacon"><i /></span>
+              <b>PRIVATE EXECUTION LAYER</b>
+            </div>
             <div className="canvas-caption">
               <span>{activeRecipe.name}</span>
               <p>{activeRecipe.description}</p>

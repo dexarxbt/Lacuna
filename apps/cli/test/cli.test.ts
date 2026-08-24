@@ -30,6 +30,17 @@ test('accepts an intentionally incomplete draft manifest', () => {
   assert.deepEqual(result.manifest, { transactions: [], contracts: [] })
 })
 
+test('allows live demo metadata before mainnet evidence is complete', () => {
+  const result = parseSubmissionManifest({
+    transactions: [],
+    contracts: [],
+    demo_url: 'https://lacuna-strk.vercel.app/',
+  })
+  assert.deepEqual(result.errors, [])
+  assert.ok(result.manifest)
+  assert.deepEqual(validateManifestEvidence(result.manifest, { evidence: [] }), [])
+})
+
 test('complete submission mode requires three transactions', () => {
   const result = parseSubmissionManifest({ transactions: [], contracts: [] }, true)
   assert.match(result.errors.join(' '), /At least three/)

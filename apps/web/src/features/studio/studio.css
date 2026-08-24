@@ -147,3 +147,29 @@
   .studio-footerbar { align-items: flex-start; flex-direction: column; padding-block: 16px; }
   .disclosure-counts { flex-wrap: wrap; }
 }
+
+/* Depth cues and signal motion for the dedicated Studio route */
+.canvas-depth-art { position: absolute; z-index: 0; inset: 82px 14% 70px; pointer-events: none; }
+.depth-ring { position: absolute; left: 50%; top: 50%; border: 1px solid rgba(145,167,255,.12); border-radius: 50%; transform: translate(-50%,-50%); animation: depth-pulse 5s ease-in-out infinite; }
+.depth-ring-one { width: 260px; height: 260px; }
+.depth-ring-two { width: 390px; height: 390px; border-style: dashed; animation-delay: -2.5s; }
+.depth-beacon { position: absolute; left: 50%; top: 50%; width: 54px; height: 54px; border: 1px solid rgba(180,248,200,.22); border-radius: 14px; transform: translate(-50%,-50%) rotate(45deg); background: rgba(180,248,200,.03); }
+.depth-beacon i { position: absolute; inset: 20px; border-radius: 50%; background: var(--private); box-shadow: 0 0 24px rgba(180,248,200,.45); animation: beacon-pulse 2.2s ease-in-out infinite; }
+.canvas-depth-art b { position: absolute; left: 50%; bottom: -8px; transform: translateX(-50%); color: rgba(145,167,255,.28); font: 7px/1 ui-monospace, monospace; letter-spacing: .18em; white-space: nowrap; }
+.flow-track, .canvas-caption, .canvas-legend { position: relative; z-index: 2; }
+.recipe-node::after { content: ""; position: absolute; inset: -1px; border-radius: inherit; opacity: 0; box-shadow: 0 0 30px rgba(180,248,200,.13); transition: opacity .2s ease; pointer-events: none; }
+.recipe-node.selected::after { opacity: 1; }
+.recipe-node.selected { animation: selected-breathe 3.6s ease-in-out infinite; }
+.node-connector { overflow: visible; }
+.node-connector::before { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, var(--private), transparent); transform: scaleX(.25); transform-origin: left; animation: connector-scan 2.8s ease-in-out infinite; }
+.node-connector i { animation: connector-dot 2s ease-in-out infinite; }
+
+@keyframes depth-pulse { 50% { opacity: .38; transform: translate(-50%,-50%) scale(1.06); } }
+@keyframes beacon-pulse { 50% { opacity: .45; transform: scale(.65); } }
+@keyframes selected-breathe { 50% { border-color: rgba(180,248,200,.78); } }
+@keyframes connector-scan { 50% { transform: translateX(240%) scaleX(.35); opacity: .2; } }
+@keyframes connector-dot { 50% { box-shadow: 0 0 14px rgba(180,248,200,.75); } }
+
+@media (max-width: 700px) {
+  .canvas-depth-art { left: 100px; right: auto; width: 560px; }
+}

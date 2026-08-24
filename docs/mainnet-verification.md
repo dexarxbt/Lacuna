@@ -18,7 +18,7 @@ The RPC URL can be replaced for verification with `LACUNA_RPC_URL`; the CLI reje
 npm run check:manifest
 ```
 
-This checks JSON shape, unique Starknet hashes and addresses, HTTPS links, and exact consistency with `verification/mainnet/transaction-index.json`. It intentionally permits an empty or partial transaction list while the product is under development, but each listed hash must have matching schema-valid evidence with every required check passed, and stale index records are rejected. Adding demo metadata requires at least three verified hashes.
+This checks JSON shape, unique Starknet hashes and addresses, HTTPS links, and exact consistency with `verification/mainnet/transaction-index.json`. It intentionally permits an empty or partial transaction list while the product is under development, but each listed hash must have matching schema-valid evidence with every required check passed, and stale index records are rejected. Demo and video URLs can be published independently as they become available.
 
 ## Final chain verification
 

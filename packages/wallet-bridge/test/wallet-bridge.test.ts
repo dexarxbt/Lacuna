@@ -319,3 +319,107 @@ test('keeps root-coded equal-code message conflicts indeterminate', async () => 
   assert.deepEqual(report.issues, ['strk20-check-failed'])
   assert.match(report.detail, /Conflicting wallet errors/)
 })
+
+
+test('keeps explicit not-registered through a generic server wrapper', async () => {
+  const wallet = mockWallet((call) => {
+    if (call.type === 'wallet_requestAccounts') return ['0xabc']
+    if (call.type === 'wallet_requestChainId') return 'SN_MAIN'
+    if (call.type === 'wallet_supportedWalletApi') return ['0.10.3', '0.7.2']
+    if (call.type === 'wallet_strk20Balances') {
+      throw {
+        code: 118,
+        message: 'An error occurred (NOT_REGISTERED)',
+        data: { code: -32603, message: 'Internal server error' },
+      }
+    }
+    return []
+  })
+
+  const report = await probeWallet(wallet)
+  assert.equal(report.apiVersionStatus, 'supported')
+  assert.equal(report.strk20Status, 'supported')
+  assert.equal(report.registered, false)
+  assert.deepEqual(report.issues, ['not-registered'])
+  assert.doesNotMatch(report.detail, /Conflicting wallet errors/)
+})
+
+test('recognizes nested not-registered behind a generic root wrapper', async () => {
+  const wallet = mockWallet((call) => {
+    if (call.type === 'wallet_requestAccounts') return ['0xabc']
+    if (call.type === 'wallet_requestChainId') return 'SN_MAIN'
+    if (call.type === 'wallet_supportedWalletApi') return ['0.10.3']
+    if (call.type === 'wallet_strk20Balances') {
+      throw {
+        code: -32603,
+        message: 'Internal server error',
+        error: { code: '118', message: 'An error occurred (NOT_REGISTERED)' },
+      }
+    }
+    return []
+  })
+
+  const report = await probeWallet(wallet)
+  assert.equal(report.strk20Status, 'supported')
+  assert.equal(report.registered, false)
+  assert.deepEqual(report.issues, ['not-registered'])
+})
+
+test('does not trust free-form not-registered text without code 118', async () => {
+  const wallet = mockWallet((call) => {
+    if (call.type === 'wallet_requestAccounts') return ['0xabc']
+    if (call.type === 'wallet_requestChainId') return 'SN_MAIN'
+    if (call.type === 'wallet_supportedWalletApi') return ['0.10.3']
+    if (call.type === 'wallet_strk20Balances') {
+      throw {
+        message: 'An error occurred (NOT_REGISTERED)',
+        data: { message: 'Internal server error' },
+      }
+    }
+    return []
+  })
+
+  const report = await probeWallet(wallet)
+  assert.equal(report.strk20Status, 'indeterminate')
+  assert.equal(report.registered, null)
+  assert.deepEqual(report.issues, ['strk20-check-failed'])
+})
+
+test('keeps not-registered plus an unknown structured code inconclusive', async () => {
+  const wallet = mockWallet((call) => {
+    if (call.type === 'wallet_requestAccounts') return ['0xabc']
+    if (call.type === 'wallet_requestChainId') return 'SN_MAIN'
+    if (call.type === 'wallet_supportedWalletApi') return ['0.10.3']
+    if (call.type === 'wallet_strk20Balances') {
+      throw {
+        code: 118,
+        message: 'An error occurred (NOT_REGISTERED)',
+        cause: { code: 999, message: 'Unknown provider state' },
+      }
+    }
+    return []
+  })
+
+  const report = await probeWallet(wallet)
+  assert.equal(report.strk20Status, 'indeterminate')
+  assert.equal(report.registered, null)
+  assert.deepEqual(report.issues, ['strk20-check-failed'])
+  assert.match(report.detail, /Conflicting wallet errors/)
+})
+
+test('keeps a generic internal server error inconclusive on its own', async () => {
+  const wallet = mockWallet((call) => {
+    if (call.type === 'wallet_requestAccounts') return ['0xabc']
+    if (call.type === 'wallet_requestChainId') return 'SN_MAIN'
+    if (call.type === 'wallet_supportedWalletApi') return ['0.10.3']
+    if (call.type === 'wallet_strk20Balances') {
+      throw { code: -32603, message: 'Internal server error' }
+    }
+    return []
+  })
+
+  const report = await probeWallet(wallet)
+  assert.equal(report.strk20Status, 'indeterminate')
+  assert.equal(report.registered, null)
+  assert.deepEqual(report.issues, ['strk20-check-failed'])
+})

@@ -95,6 +95,33 @@ function parseRpcCode(value: unknown): number | undefined {
   return undefined
 }
 
+type RpcErrorMeaning =
+  | 'not-registered'
+  | 'api-version-unsupported'
+  | 'method-unsupported'
+  | 'user-refused'
+  | 'invalid-request'
+
+function rpcCodeMeaning(code: number | undefined): RpcErrorMeaning | undefined {
+  if (code === 118) return 'not-registered'
+  if (code === 162) return 'api-version-unsupported'
+  if (code === -32601 || code === 4200) return 'method-unsupported'
+  if (code === 113) return 'user-refused'
+  if (code === 114) return 'invalid-request'
+  return undefined
+}
+
+function rpcMessageMeaning(message: string): RpcErrorMeaning | undefined {
+  const normalized = message.trim()
+  if (/^(method not found|method not supported|unsupported method|not implemented)$/i.test(normalized)) {
+    return 'method-unsupported'
+  }
+  if (/\bAPI_VERSION_NOT_SUPPORTED\b/i.test(normalized)) return 'api-version-unsupported'
+  if (/\b(USER_REFUSED|user (rejected|refused|denied))\b/i.test(normalized)) return 'user-refused'
+  if (/\bINVALID_REQUEST\b/i.test(normalized)) return 'invalid-request'
+  return undefined
+}
+
 function normalizeRpcError(error: unknown): NormalizedRpcError {
   const root = asRecord(error)
   if (!root) {
@@ -109,13 +136,46 @@ function normalizeRpcError(error: unknown): NormalizedRpcError {
   }))
   const codes = [...new Set(candidates.flatMap(({ code }) => code === undefined ? [] : [code]))]
   const messages = [...new Set(candidates.map(({ message }) => message).filter(Boolean))]
-  const codedCandidate = candidates.find(({ code }) => code !== undefined)
-  const ambiguous = codes.length > 1 || messages.length > 1
+  const meanings = new Set<RpcErrorMeaning>()
+
+  for (const candidate of candidates) {
+    const codeMeaning = rpcCodeMeaning(candidate.code)
+    const messageMeaning = rpcMessageMeaning(candidate.message)
+    if (codeMeaning) meanings.add(codeMeaning)
+    if (messageMeaning) meanings.add(messageMeaning)
+  }
+
+  // JSON-RPC -32603 is commonly a generic outer wrapper. It may add diagnostics,
+  // but it must not erase a more specific structured Wallet API error such as 118.
+  const unknownSpecificCodes = codes.filter((code) => rpcCodeMeaning(code) === undefined && code !== -32603)
+  const ambiguous = meanings.size > 1
+    || (meanings.size > 0 && unknownSpecificCodes.length > 0)
+    || (meanings.size === 0 && unknownSpecificCodes.length > 1)
+
+  if (ambiguous) {
+    return {
+      message: `Conflicting wallet errors: ${messages.join(' | ') || codes.join(' | ')}`,
+      ambiguous: true,
+    }
+  }
+
+  const meaning = meanings.values().next().value as RpcErrorMeaning | undefined
+  const semanticCodeCandidate = meaning === undefined
+    ? undefined
+    : candidates.find(({ code }) => rpcCodeMeaning(code) === meaning)
+  const semanticMessageCandidate = meaning === undefined
+    ? undefined
+    : candidates.find(({ message }) => rpcMessageMeaning(message) === meaning)
+  const fallbackCodedCandidate = candidates.find(({ code }) => code !== undefined && code !== -32603)
+    ?? candidates.find(({ code }) => code !== undefined)
 
   return {
-    code: ambiguous ? undefined : codedCandidate?.code,
-    message: ambiguous ? `Conflicting wallet errors: ${messages.join(' | ')}` : messages[0] || String(error),
-    ambiguous,
+    code: semanticCodeCandidate?.code ?? fallbackCodedCandidate?.code,
+    message: semanticCodeCandidate?.message
+      || semanticMessageCandidate?.message
+      || messages[0]
+      || String(error),
+    ambiguous: false,
   }
 }
 

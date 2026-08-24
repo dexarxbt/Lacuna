@@ -33,7 +33,7 @@ The doctor distinguishes three STRK20 outcomes:
 - **Unsupported**: the provider explicitly reports that the method is missing or unsupported.
 - **Check incomplete**: the provider rejects the probe for another reason, returns malformed data, or cannot report enough information.
 
-Missing version metadata alone is reported as **not reported**, not **too old**. The completed report preserves the wallet's probe error and numeric code when available so a locked wallet, user refusal, implementation error, and missing method are not presented as the same result. Conflicting error envelopes remain inconclusive. No inconclusive response unlocks execution or claims compatibility.
+Missing version metadata alone is reported as **not reported**, not **too old**. The completed report preserves the wallet's probe error and numeric code when available so a locked wallet, user refusal, implementation error, and missing method are not presented as the same result. Conflicting actionable error evidence remains inconclusive. A generic JSON-RPC internal-server wrapper is diagnostic-only and does not erase a nested or outer structured code `118`; free-form `NOT_REGISTERED` text without code `118` is never trusted. No inconclusive response unlocks execution or claims compatibility.
 
 ## Safety behavior
 

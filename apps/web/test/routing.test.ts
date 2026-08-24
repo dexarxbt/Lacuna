@@ -28,6 +28,9 @@ test('ships route-specific canonical and social metadata', async () => {
   const studio = await readText('studio/index.html')
 
   assert.match(landing, /rel="canonical" href="https:\/\/lacuna-strk\.vercel\.app\/"/)
+  assert.match(landing, /<title>Lacuna — Build private flows\. Know what leaks\.<\/title>/)
+  assert.match(landing, /Studio execution is locked; mainnet evidence is pending\./)
+  assert.match(landing, /property="og:title" content="Lacuna — Build private flows\. Know what leaks\."/)
   assert.match(studio, /rel="canonical" href="https:\/\/lacuna-strk\.vercel\.app\/studio"/)
   assert.match(studio, /property="og:title" content="Studio — Lacuna"/)
   assert.match(studio, /name="twitter:title" content="Studio — Lacuna"/)

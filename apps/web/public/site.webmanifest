@@ -1,7 +1,7 @@
 {
   "name": "Lacuna",
   "short_name": "Lacuna",
-  "description": "A visibility-first STRK20 privacy development studio.",
+  "description": "Inspect STRK20 disclosure boundaries and wallet capabilities before signing.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#050608",

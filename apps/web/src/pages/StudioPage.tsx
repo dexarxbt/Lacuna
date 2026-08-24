@@ -1,8 +1,9 @@
 import { Studio } from '../features/studio/Studio'
+import '../features/studio/studio.css'
 
 export function StudioPage() {
   return (
-    <main className="studio-page" id="top">
+    <main className="studio-page" id="main-content">
       <section className="studio-page-hero wrap">
         <div>
           <p className="kicker">LIVE PRIVACY WORKBENCH</p>

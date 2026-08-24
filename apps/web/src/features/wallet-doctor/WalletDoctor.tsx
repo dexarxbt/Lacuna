@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import './wallet-doctor.css'
 import {
   discoverInjectedWallets,
   probeWallet,

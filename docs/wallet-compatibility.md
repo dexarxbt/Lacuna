@@ -25,7 +25,15 @@ wallet_supportedWalletApi
 wallet_strk20Balances({ tokens: [], api_version: "0.10.3" })
 ```
 
-Error code `118` (`NOT_REGISTERED`) still proves the STRK20 method exists; the UI reports registration as the next required action. Other failures are reported without attempting a transaction.
+Error code `118` (`NOT_REGISTERED`) proves that the STRK20 method exists, but it does not by itself prove Wallet API `0.10.3` compatibility; the UI reports registration and version status independently. A valid successful balance response can infer compatibility with the requested `0.10.3` only when the separate version lookup advertises no versions. Explicit older-version metadata or error `162` remains blocking.
+
+The doctor distinguishes three STRK20 outcomes:
+
+- **Supported**: the balance method returns a valid array or reports `NOT_REGISTERED`.
+- **Unsupported**: the provider explicitly reports that the method is missing or unsupported.
+- **Check incomplete**: the provider rejects the probe for another reason, returns malformed data, or cannot report enough information.
+
+Missing version metadata alone is reported as **not reported**, not **too old**. The completed report preserves the wallet's probe error and numeric code when available so a locked wallet, user refusal, implementation error, and missing method are not presented as the same result. Conflicting error envelopes remain inconclusive. No inconclusive response unlocks execution or claims compatibility.
 
 ## Safety behavior
 

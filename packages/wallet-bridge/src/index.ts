@@ -24,17 +24,30 @@ export type InjectedWallet = {
   request(call: WalletRequest): Promise<unknown>
 }
 
+export type WalletApiStatus = 'supported' | 'outdated' | 'unreported'
+export type Strk20SupportStatus = 'supported' | 'unsupported' | 'indeterminate'
+export type WalletCapabilityIssue =
+  | 'no-account'
+  | 'wrong-network'
+  | 'api-too-old'
+  | 'api-unreported'
+  | 'strk20-unsupported'
+  | 'strk20-check-failed'
+  | 'not-registered'
+
 export type WalletCapabilityReport = {
   walletId: string
   walletName: string
   account: string | null
   chainId: string | null
   apiVersions: string[]
+  apiVersionStatus: WalletApiStatus
   meetsRequiredApi: boolean
+  strk20Status: Strk20SupportStatus
   strk20Supported: boolean
   registered: boolean | null
   balances: Array<{ token: string; balance: string }>
-  issues: Array<'no-account' | 'wrong-network' | 'api-too-old' | 'strk20-unsupported' | 'not-registered'>
+  issues: WalletCapabilityIssue[]
   detail: string
 }
 
@@ -70,14 +83,62 @@ function asRecord(value: unknown): Record<string, unknown> | null {
     : null
 }
 
+type NormalizedRpcError = {
+  code?: number
+  message: string
+  ambiguous: boolean
+}
+
+function parseRpcCode(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && /^-?\d+$/.test(value)) return Number(value)
+  return undefined
+}
+
+function normalizeRpcError(error: unknown): NormalizedRpcError {
+  const root = asRecord(error)
+  if (!root) {
+    return { message: error instanceof Error ? error.message : String(error), ambiguous: false }
+  }
+
+  const records = [root, asRecord(root.error), asRecord(root.data), asRecord(root.cause)]
+    .filter((value): value is Record<string, unknown> => value !== null)
+  const candidates = records.map((record) => ({
+    code: parseRpcCode(record.code),
+    message: typeof record.message === 'string' ? record.message : '',
+  }))
+  const codes = [...new Set(candidates.flatMap(({ code }) => code === undefined ? [] : [code]))]
+  const messages = [...new Set(candidates.map(({ message }) => message).filter(Boolean))]
+  const codedCandidate = candidates.find(({ code }) => code !== undefined)
+  const ambiguous = codes.length > 1 || messages.length > 1
+
+  return {
+    code: ambiguous ? undefined : codedCandidate?.code,
+    message: ambiguous ? `Conflicting wallet errors: ${messages.join(' | ')}` : messages[0] || String(error),
+    ambiguous,
+  }
+}
+
 function rpcErrorCode(error: unknown): number | undefined {
-  return asRecord(error)?.code as number | undefined
+  return normalizeRpcError(error).code
 }
 
 function errorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message
-  const message = asRecord(error)?.message
-  return typeof message === 'string' ? message : String(error)
+  return normalizeRpcError(error).message
+}
+
+function describeRpcError(error: unknown): string {
+  const normalized = normalizeRpcError(error)
+  return normalized.code === undefined ? normalized.message : `${normalized.message} (code ${normalized.code})`
+}
+
+function isUnsupportedMethod(error: unknown): boolean {
+  const normalized = normalizeRpcError(error)
+  if (normalized.ambiguous) return false
+  if (normalized.code === -32601 || normalized.code === 4200) return true
+  const namesBalanceMethod = /wallet_strk20Balances|strk20[\s_-]*balance/i.test(normalized.message)
+  const reportsUnavailable = /not found|not supported|unsupported|not implemented/i.test(normalized.message)
+  return namesBalanceMethod && reportsUnavailable
 }
 
 function normalizeChainId(value: unknown): string | null {
@@ -130,43 +191,59 @@ async function requestStrings(wallet: InjectedWallet, type: string, params?: unk
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
 }
 
-function parseBalances(value: unknown): Array<{ token: string; balance: string }> {
-  if (!Array.isArray(value)) return []
-  return value.flatMap((entry) => {
+function parseBalances(value: unknown): Array<{ token: string; balance: string }> | null {
+  if (!Array.isArray(value)) return null
+  const balances: Array<{ token: string; balance: string }> = []
+  for (const entry of value) {
     const record = asRecord(entry)
-    return record && typeof record.token === 'string' && typeof record.balance === 'string'
-      ? [{ token: record.token, balance: record.balance }]
-      : []
-  })
+    if (
+      !record
+      || typeof record.token !== 'string'
+      || !ADDRESS_PATTERN.test(record.token)
+      || typeof record.balance !== 'string'
+      || !AMOUNT_PATTERN.test(record.balance)
+    ) return null
+    balances.push({ token: record.token, balance: record.balance })
+  }
+  return balances
 }
 
 export async function probeWallet(wallet: InjectedWallet, requestAccount = true): Promise<WalletCapabilityReport> {
   let account: string | null = null
   let chainId: string | null = null
   let apiVersions: string[] = []
-  let strk20Supported = false
+  let strk20Status: Strk20SupportStatus = 'indeterminate'
+  let balanceResponseSucceeded = false
   let registered: boolean | null = null
   let balances: Array<{ token: string; balance: string }> = []
-  let detail = ''
+  let balanceFailureCode: number | undefined
+  const details: string[] = []
 
   if (requestAccount) {
     try {
       account = (await requestStrings(wallet, 'wallet_requestAccounts'))[0] ?? null
+      if (!account) details.push('The wallet returned no active account.')
     } catch (error) {
-      detail = `Account access failed: ${errorMessage(error)}`
+      details.push(`Account access failed: ${describeRpcError(error)}`)
     }
   }
 
   try {
     chainId = normalizeChainId(await wallet.request({ type: 'wallet_requestChainId' }))
+    if (!chainId) details.push('The wallet returned an invalid network response.')
   } catch (error) {
-    detail ||= `Network detection failed: ${errorMessage(error)}`
+    details.push(`Network detection failed: ${describeRpcError(error)}`)
   }
 
   try {
-    apiVersions = await requestStrings(wallet, 'wallet_supportedWalletApi')
-  } catch {
-    apiVersions = []
+    const value = await wallet.request({ type: 'wallet_supportedWalletApi' })
+    if (Array.isArray(value) && value.every((item) => typeof item === 'string')) {
+      apiVersions = value
+    } else {
+      details.push('Wallet API version lookup returned an invalid response.')
+    }
+  } catch (error) {
+    details.push(`Wallet API version lookup failed: ${describeRpcError(error)}`)
   }
 
   try {
@@ -174,27 +251,53 @@ export async function probeWallet(wallet: InjectedWallet, requestAccount = true)
       type: 'wallet_strk20Balances',
       params: { tokens: [], api_version: REQUIRED_WALLET_API },
     })
-    balances = parseBalances(value)
-    strk20Supported = true
-    registered = true
-    detail = 'The wallet answered the read-only STRK20 balance probe.'
-  } catch (error) {
-    if (rpcErrorCode(error) === 118) {
-      strk20Supported = true
-      registered = false
-      detail = 'STRK20 is supported, but this account is not registered with the pool.'
+    const parsedBalances = parseBalances(value)
+    if (parsedBalances === null) {
+      details.push('The STRK20 balance method returned an invalid response.')
     } else {
-      detail ||= `The wallet rejected the STRK20 capability probe: ${errorMessage(error)}`
+      balances = parsedBalances
+      balanceResponseSucceeded = true
+      strk20Status = 'supported'
+      registered = true
+      details.push('The wallet answered the read-only STRK20 balance probe.')
+    }
+  } catch (error) {
+    balanceFailureCode = rpcErrorCode(error)
+    if (balanceFailureCode === 118) {
+      strk20Status = 'supported'
+      registered = false
+      details.push('STRK20 is supported, but this account is not registered with the pool.')
+    } else if (isUnsupportedMethod(error)) {
+      strk20Status = 'unsupported'
+      details.push(`The wallet does not expose the STRK20 balance method: ${describeRpcError(error)}`)
+    } else {
+      details.push(`The STRK20 balance check could not complete: ${describeRpcError(error)}`)
     }
   }
 
-  const meetsRequiredApi = apiVersions.some((version) => compareVersions(version, REQUIRED_WALLET_API) >= 0)
-  const issues: WalletCapabilityReport['issues'] = []
+  const advertisedApiSupport = apiVersions.some((version) => compareVersions(version, REQUIRED_WALLET_API) >= 0)
+  const inferredApiSupport = apiVersions.length === 0 && balanceResponseSucceeded
+  const apiVersionRejected = balanceFailureCode === 162
+  const meetsRequiredApi = !apiVersionRejected && (advertisedApiSupport || inferredApiSupport)
+  const apiVersionStatus: WalletApiStatus = apiVersionRejected
+    ? 'outdated'
+    : meetsRequiredApi
+      ? 'supported'
+      : apiVersions.length > 0
+        ? 'outdated'
+        : 'unreported'
+  const issues: WalletCapabilityIssue[] = []
   if (requestAccount && !account) issues.push('no-account')
   if (chainId !== STARKNET_MAINNET_CHAIN_ID) issues.push('wrong-network')
-  if (!meetsRequiredApi) issues.push('api-too-old')
-  if (!strk20Supported) issues.push('strk20-unsupported')
+  if (apiVersionStatus === 'outdated') issues.push('api-too-old')
+  if (apiVersionStatus === 'unreported') issues.push('api-unreported')
+  if (strk20Status === 'unsupported') issues.push('strk20-unsupported')
+  if (strk20Status === 'indeterminate') issues.push('strk20-check-failed')
   if (registered === false) issues.push('not-registered')
+
+  if (inferredApiSupport) {
+    details.push(`Compatibility with Wallet API ${REQUIRED_WALLET_API} was inferred from the successful STRK20 response.`)
+  }
 
   return {
     walletId: wallet.id,
@@ -202,12 +305,14 @@ export async function probeWallet(wallet: InjectedWallet, requestAccount = true)
     account,
     chainId,
     apiVersions,
+    apiVersionStatus,
     meetsRequiredApi,
-    strk20Supported,
+    strk20Status,
+    strk20Supported: strk20Status === 'supported',
     registered,
     balances,
     issues,
-    detail,
+    detail: details.join(' '),
   }
 }
 

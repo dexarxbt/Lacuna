@@ -111,3 +111,211 @@ test('invalid actions fail before reaching a wallet', async () => {
   ]
   assert.match(validateActions(actions).join(' '), /only one external invoke/)
 })
+
+test('keeps unknown probe failures indeterminate and visible', async () => {
+  const wallet = mockWallet((call) => {
+    if (call.type === 'wallet_requestAccounts') return ['0xabc']
+    if (call.type === 'wallet_requestChainId') return 'SN_MAIN'
+    if (call.type === 'wallet_supportedWalletApi') throw { code: 163, message: 'Version lookup failed' }
+    if (call.type === 'wallet_strk20Balances') {
+      throw { error: { code: '163', message: 'Privacy service unavailable' } }
+    }
+    return []
+  })
+
+  const report = await probeWallet(wallet)
+  assert.equal(report.strk20Status, 'indeterminate')
+  assert.equal(report.strk20Supported, false)
+  assert.equal(report.apiVersionStatus, 'unreported')
+  assert.deepEqual(report.issues, ['api-unreported', 'strk20-check-failed'])
+  assert.match(report.detail, /Version lookup failed \(code 163\)/)
+  assert.match(report.detail, /Privacy service unavailable \(code 163\)/)
+})
+
+test('marks only an explicit missing method as unsupported', async () => {
+  const wallet = mockWallet((call) => {
+    if (call.type === 'wallet_requestAccounts') return ['0xabc']
+    if (call.type === 'wallet_requestChainId') return 'SN_MAIN'
+    if (call.type === 'wallet_supportedWalletApi') return ['0.10.3']
+    if (call.type === 'wallet_strk20Balances') {
+      throw { error: { code: '-32601', message: 'Method not found' } }
+    }
+    return []
+  })
+
+  const report = await probeWallet(wallet)
+  assert.equal(report.strk20Status, 'unsupported')
+  assert.deepEqual(report.issues, ['strk20-unsupported'])
+  assert.match(report.detail, /Method not found \(code -32601\)/)
+})
+
+test('does not accept a malformed balance response as support', async () => {
+  const wallet = mockWallet((call) => {
+    if (call.type === 'wallet_requestAccounts') return ['0xabc']
+    if (call.type === 'wallet_requestChainId') return 'SN_MAIN'
+    if (call.type === 'wallet_supportedWalletApi') return ['0.10.3']
+    if (call.type === 'wallet_strk20Balances') return { balances: [] }
+    return []
+  })
+
+  const report = await probeWallet(wallet)
+  assert.equal(report.strk20Status, 'indeterminate')
+  assert.equal(report.registered, null)
+  assert.deepEqual(report.issues, ['strk20-check-failed'])
+  assert.match(report.detail, /invalid response/)
+})
+
+test('infers required API compatibility from a successful STRK20 response', async () => {
+  const wallet = mockWallet((call) => {
+    if (call.type === 'wallet_requestAccounts') return ['0xabc']
+    if (call.type === 'wallet_requestChainId') return 'SN_MAIN'
+    if (call.type === 'wallet_supportedWalletApi') throw { code: 163, message: 'Unavailable' }
+    if (call.type === 'wallet_strk20Balances') return []
+    return []
+  })
+
+  const report = await probeWallet(wallet)
+  assert.equal(report.strk20Status, 'supported')
+  assert.equal(report.meetsRequiredApi, true)
+  assert.equal(report.apiVersionStatus, 'supported')
+  assert.deepEqual(report.issues, [])
+  assert.match(report.detail, /inferred from the successful STRK20 response/)
+})
+
+test('recognizes nested numeric-string not-registered errors', async () => {
+  const wallet = mockWallet((call) => {
+    if (call.type === 'wallet_requestAccounts') return ['0xabc']
+    if (call.type === 'wallet_requestChainId') return 'SN_MAIN'
+    if (call.type === 'wallet_supportedWalletApi') return ['0.10.3']
+    if (call.type === 'wallet_strk20Balances') {
+      throw { data: { code: '118', message: 'An error occurred (NOT_REGISTERED)' } }
+    }
+    return []
+  })
+
+  const report = await probeWallet(wallet)
+  assert.equal(report.strk20Status, 'supported')
+  assert.equal(report.registered, false)
+  assert.deepEqual(report.issues, ['not-registered'])
+})
+
+test('rejects invalid balance entries instead of proving support', async () => {
+  const wallet = mockWallet((call) => {
+    if (call.type === 'wallet_requestAccounts') return ['0xabc']
+    if (call.type === 'wallet_requestChainId') return 'SN_MAIN'
+    if (call.type === 'wallet_supportedWalletApi') return ['0.10.3']
+    if (call.type === 'wallet_strk20Balances') return [{ token: 'not-an-address', balance: 'NaN' }]
+    return []
+  })
+
+  const report = await probeWallet(wallet)
+  assert.equal(report.strk20Status, 'indeterminate')
+  assert.deepEqual(report.issues, ['strk20-check-failed'])
+})
+
+test('keeps conflicting nested wallet errors indeterminate', async () => {
+  const wallet = mockWallet((call) => {
+    if (call.type === 'wallet_requestAccounts') return ['0xabc']
+    if (call.type === 'wallet_requestChainId') return 'SN_MAIN'
+    if (call.type === 'wallet_supportedWalletApi') return ['0.10.3']
+    if (call.type === 'wallet_strk20Balances') {
+      throw {
+        message: 'Method not found',
+        data: { code: 118, message: 'An error occurred (NOT_REGISTERED)' },
+      }
+    }
+    return []
+  })
+
+  const report = await probeWallet(wallet)
+  assert.equal(report.strk20Status, 'indeterminate')
+  assert.equal(report.registered, null)
+  assert.deepEqual(report.issues, ['strk20-check-failed'])
+  assert.match(report.detail, /Conflicting wallet errors/)
+})
+
+test('does not let a balance response override an explicitly old API', async () => {
+  const wallet = mockWallet((call) => {
+    if (call.type === 'wallet_requestAccounts') return ['0xabc']
+    if (call.type === 'wallet_requestChainId') return 'SN_MAIN'
+    if (call.type === 'wallet_supportedWalletApi') return ['0.9.0']
+    if (call.type === 'wallet_strk20Balances') return []
+    return []
+  })
+
+  const report = await probeWallet(wallet)
+  assert.equal(report.strk20Status, 'supported')
+  assert.equal(report.meetsRequiredApi, false)
+  assert.equal(report.apiVersionStatus, 'outdated')
+  assert.deepEqual(report.issues, ['api-too-old'])
+})
+
+test('not-registered does not infer an unreported API version', async () => {
+  const wallet = mockWallet((call) => {
+    if (call.type === 'wallet_requestAccounts') return ['0xabc']
+    if (call.type === 'wallet_requestChainId') return 'SN_MAIN'
+    if (call.type === 'wallet_supportedWalletApi') throw { code: 163, message: 'Unavailable' }
+    if (call.type === 'wallet_strk20Balances') throw { code: 118, message: 'An error occurred (NOT_REGISTERED)' }
+    return []
+  })
+
+  const report = await probeWallet(wallet)
+  assert.equal(report.strk20Status, 'supported')
+  assert.equal(report.meetsRequiredApi, false)
+  assert.equal(report.apiVersionStatus, 'unreported')
+  assert.deepEqual(report.issues, ['api-unreported', 'not-registered'])
+})
+
+test('reports API version rejection as outdated and capability as incomplete', async () => {
+  const wallet = mockWallet((call) => {
+    if (call.type === 'wallet_requestAccounts') return ['0xabc']
+    if (call.type === 'wallet_requestChainId') return 'SN_MAIN'
+    if (call.type === 'wallet_supportedWalletApi') return ['0.10.3']
+    if (call.type === 'wallet_strk20Balances') {
+      throw { code: 162, message: 'An error occurred (API_VERSION_NOT_SUPPORTED)' }
+    }
+    return []
+  })
+
+  const report = await probeWallet(wallet)
+  assert.equal(report.meetsRequiredApi, false)
+  assert.equal(report.apiVersionStatus, 'outdated')
+  assert.equal(report.strk20Status, 'indeterminate')
+  assert.deepEqual(report.issues, ['api-too-old', 'strk20-check-failed'])
+})
+
+test('does not classify an unrelated not-implemented message as missing STRK20', async () => {
+  const wallet = mockWallet((call) => {
+    if (call.type === 'wallet_requestAccounts') return ['0xabc']
+    if (call.type === 'wallet_requestChainId') return 'SN_MAIN'
+    if (call.type === 'wallet_supportedWalletApi') return ['0.10.3']
+    if (call.type === 'wallet_strk20Balances') throw new Error('Account recovery is not implemented')
+    return []
+  })
+
+  const report = await probeWallet(wallet)
+  assert.equal(report.strk20Status, 'indeterminate')
+  assert.deepEqual(report.issues, ['strk20-check-failed'])
+})
+
+test('keeps root-coded equal-code message conflicts indeterminate', async () => {
+  const wallet = mockWallet((call) => {
+    if (call.type === 'wallet_requestAccounts') return ['0xabc']
+    if (call.type === 'wallet_requestChainId') return 'SN_MAIN'
+    if (call.type === 'wallet_supportedWalletApi') return ['0.10.3']
+    if (call.type === 'wallet_strk20Balances') {
+      throw {
+        code: 118,
+        message: 'An error occurred (NOT_REGISTERED)',
+        data: { code: 118, message: 'Method not found' },
+      }
+    }
+    return []
+  })
+
+  const report = await probeWallet(wallet)
+  assert.equal(report.strk20Status, 'indeterminate')
+  assert.equal(report.registered, null)
+  assert.deepEqual(report.issues, ['strk20-check-failed'])
+  assert.match(report.detail, /Conflicting wallet errors/)
+})

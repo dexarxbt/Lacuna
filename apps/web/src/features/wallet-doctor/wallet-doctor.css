@@ -60,6 +60,9 @@
 .doctor-report dl div:last-child { border: 0; }
 .doctor-report dt { color: #65707c; }
 .doctor-report dd { margin: 0; color: #c0c8d0; font-family: ui-monospace, monospace; }
+.doctor-detail { display: grid; gap: 5px; margin-bottom: 10px; padding: 10px; border: 1px solid var(--hairline); border-radius: 8px; background: rgba(255,255,255,.015); }
+.doctor-detail b { color: #aab3bd; font-size: 8px; font-weight: 500; text-transform: uppercase; letter-spacing: .04em; }
+.doctor-detail small { color: #747f8b; font: 8px/1.5 ui-monospace, monospace; overflow-wrap: anywhere; }
 .doctor-issues { display: grid; gap: 6px; }
 .doctor-issues > div { display: flex; gap: 9px; padding: 10px; border: 1px solid rgba(244,190,114,.16); border-radius: 8px; background: rgba(244,190,114,.035); }
 .doctor-issues i, .doctor-error > i { flex: 0 0 auto; width: 6px; height: 6px; margin-top: 2px; border-radius: 50%; background: var(--public); }

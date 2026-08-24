@@ -12,8 +12,10 @@ type DoctorState = 'idle' | 'choosing' | 'probing' | 'complete' | 'error'
 const issueGuidance: Record<WalletCapabilityReport['issues'][number], string> = {
   'no-account': 'Unlock the wallet and approve account access.',
   'wrong-network': 'Switch the selected account to Starknet Mainnet.',
-  'api-too-old': `Use a wallet exposing Wallet API ${REQUIRED_WALLET_API} or newer.`,
-  'strk20-unsupported': 'This wallet does not answer the read-only STRK20 balance method.',
+  'api-too-old': `The wallet reported an API older than ${REQUIRED_WALLET_API}. Update it and retry.`,
+  'api-unreported': 'The wallet did not report its Wallet API version. Update or unlock it, then retry.',
+  'strk20-unsupported': 'The wallet explicitly reported that the STRK20 balance method is unavailable.',
+  'strk20-check-failed': 'The balance probe was inconclusive. Review the probe detail below before changing wallets.',
   'not-registered': 'Register this account with the STRK20 pool before receiving private notes.',
 }
 
@@ -23,7 +25,8 @@ function shortAddress(address: string | null): string {
 }
 
 function reportStatus(report: WalletCapabilityReport): { label: string; tone: string } {
-  if (!report.strk20Supported) return { label: 'Unsupported', tone: 'blocked' }
+  if (report.strk20Status === 'unsupported') return { label: 'Unsupported', tone: 'blocked' }
+  if (report.strk20Status === 'indeterminate') return { label: 'Check incomplete', tone: 'warning' }
   if (report.registered === false) return { label: 'Registration needed', tone: 'warning' }
   if (report.issues.length > 0) return { label: 'Action needed', tone: 'warning' }
   return { label: 'STRK20 ready', tone: 'ready' }
@@ -121,10 +124,15 @@ export function WalletDoctor() {
               <dl>
                 <div><dt>Account</dt><dd title={report.account ?? undefined}>{shortAddress(report.account)}</dd></div>
                 <div><dt>Network</dt><dd>{report.chainId ?? 'Unknown'}</dd></div>
-                <div><dt>Wallet API</dt><dd>{report.apiVersions.join(', ') || 'Not reported'}</dd></div>
+                <div><dt>Wallet API</dt><dd>{report.apiVersions.join(', ') || (report.meetsRequiredApi ? `${REQUIRED_WALLET_API}+ inferred` : 'Not reported')}</dd></div>
                 <div><dt>Registration</dt><dd>{report.registered === null ? 'Unknown' : report.registered ? 'Registered' : 'Required'}</dd></div>
                 <div><dt>Shielded assets</dt><dd>{report.balances.length}</dd></div>
               </dl>
+
+              <div className="doctor-detail">
+                <b>Probe detail</b>
+                <small>{report.detail || 'The wallet returned no diagnostic detail.'}</small>
+              </div>
 
               {report.issues.length > 0 ? (
                 <div className="doctor-issues">

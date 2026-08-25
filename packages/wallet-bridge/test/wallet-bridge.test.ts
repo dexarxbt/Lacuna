@@ -3,10 +3,12 @@ import test from 'node:test'
 import {
   compareVersions,
   discoverInjectedWallets,
+  isUnknownWalletError,
   prepareInvoke,
   probeWallet,
   submitInvoke,
   validateActions,
+  walletErrorCode,
   type InjectedWallet,
   type Strk20Action,
   type WalletRequest,
@@ -129,6 +131,12 @@ test('private invoke is rejected before prepare or submit reaches the wallet', a
 })
 
 test('keeps unknown probe failures indeterminate and visible', async () => {
+  assert.equal(isUnknownWalletError({ code: 163, message: 'An error occurred (UNKNOWN_ERROR)' }), true)
+  assert.equal(walletErrorCode({ code: 163, message: 'An error occurred (UNKNOWN_ERROR)' }), 163)
+  assert.equal(isUnknownWalletError(new Error('An error occurred (UNKNOWN_ERROR)')), true)
+  assert.equal(walletErrorCode(new Error('An error occurred (UNKNOWN_ERROR)')), undefined)
+  assert.equal(isUnknownWalletError({ code: 119, message: 'INSUFFICIENT_PRIVATE_BALANCE' }), false)
+
   const wallet = mockWallet((call) => {
     if (call.type === 'wallet_requestAccounts') return ['0xabc']
     if (call.type === 'wallet_requestChainId') return 'SN_MAIN'

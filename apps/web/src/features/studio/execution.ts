@@ -28,6 +28,14 @@ export type SnapshotResult =
   | { ok: true; snapshot: ExecutionSnapshot }
   | { ok: false; errors: string[] }
 
+export type TokenAmountMetadata = Readonly<{
+  symbol: string
+  decimals: number
+}>
+
+const STRK_MAINNET_TOKEN = '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d'
+const STRK_AMOUNT_METADATA: TokenAmountMetadata = Object.freeze({ symbol: 'STRK', decimals: 18 })
+
 function canonicalFelt(value: string): string | null {
   try {
     return `0x${BigInt(value).toString(16)}`
@@ -39,6 +47,49 @@ function canonicalFelt(value: string): string | null {
 function sameFelt(left: string, right: string): boolean {
   const canonicalLeft = canonicalFelt(left)
   return canonicalLeft !== null && canonicalLeft === canonicalFelt(right)
+}
+
+export function getTokenAmountMetadata(token: string): TokenAmountMetadata | null {
+  return sameFelt(token, STRK_MAINNET_TOKEN) ? STRK_AMOUNT_METADATA : null
+}
+
+export function parseTokenAmount(value: string, decimals: number): string | null {
+  if (!Number.isSafeInteger(decimals) || decimals < 0 || decimals > 255) return null
+  const match = /^(\d+)(?:\.(\d*))?$/.exec(value.trim())
+  if (!match) return null
+
+  const fraction = match[2] ?? ''
+  if (fraction.length > decimals) return null
+
+  try {
+    const scale = 10n ** BigInt(decimals)
+    const fractionValue = fraction.length === 0
+      ? 0n
+      : BigInt(fraction.padEnd(decimals, '0'))
+    return (BigInt(match[1]) * scale + fractionValue).toString()
+  } catch {
+    return null
+  }
+}
+
+export function formatTokenAmount(
+  value: string,
+  metadata: TokenAmountMetadata,
+): string | null {
+  if (!Number.isSafeInteger(metadata.decimals) || metadata.decimals < 0 || metadata.decimals > 255) return null
+  try {
+    const amount = BigInt(value)
+    if (amount < 0n) return null
+    const scale = 10n ** BigInt(metadata.decimals)
+    const whole = amount / scale
+    const fraction = (amount % scale)
+      .toString()
+      .padStart(metadata.decimals, '0')
+      .replace(/0+$/, '')
+    return `${whole}${fraction ? `.${fraction}` : ''} ${metadata.symbol}`
+  } catch {
+    return null
+  }
 }
 
 function actionFromDraft(draft: ExecutionDraft): Strk20Action {

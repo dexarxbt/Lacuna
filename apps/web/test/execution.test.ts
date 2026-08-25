@@ -4,13 +4,19 @@ import {
   STRK20_MAINNET_POOL,
   type TransactionEvidence,
 } from '@lacuna/evidence-model'
-import type {
-  InjectedWallet,
-  WalletCapabilityReport,
+import {
+  prepareInvoke,
+  submitInvoke,
+  type InjectedWallet,
+  type WalletCapabilityReport,
+  type WalletRequest,
 } from '@lacuna/wallet-bridge'
 import {
   createExecutionSnapshot,
   draftMatchesSnapshot,
+  formatTokenAmount,
+  getTokenAmountMetadata,
+  parseTokenAmount,
   sessionMatchesSnapshot,
   type ExecutionDraft,
 } from '../src/features/studio/execution.ts'
@@ -26,6 +32,7 @@ import {
 } from '../src/features/wallet-doctor/walletSession.ts'
 
 const token = '0x123'
+const strkToken = '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d'
 const account = '0xabc'
 const recipient = '0x456'
 const wallet: InjectedWallet = {
@@ -73,6 +80,13 @@ function receipt(overrides: Record<string, unknown> = {}): Record<string, unknow
 }
 
 test('creates an immutable action snapshot only from fresh wallet-reported balances', () => {
+  const strkMetadata = getTokenAmountMetadata(strkToken)
+  assert.deepEqual(strkMetadata, { symbol: 'STRK', decimals: 18 })
+  assert.equal(parseTokenAmount('1', 18), '1000000000000000000')
+  assert.equal(parseTokenAmount('0.5', 18), '500000000000000000')
+  assert.equal(parseTokenAmount('0.0000000000000000001', 18), null)
+  assert.equal(strkMetadata && formatTokenAmount('0xd02ab486cedc0000', strkMetadata), '15 STRK')
+
   const session = createWalletSession(wallet, report())
   const result = createExecutionSnapshot(session, draft)
   assert.equal(result.ok, true)
@@ -86,6 +100,67 @@ test('creates an immutable action snapshot only from fresh wallet-reported balan
   assert.equal(draftMatchesSnapshot({ ...draft, amount: '26' }, result.snapshot), false)
   assert.equal(sessionMatchesSnapshot(session, result.snapshot), true)
   assert.equal(sessionMatchesSnapshot(createWalletSession(wallet, report({ account: '0xdef' })), result.snapshot), false)
+})
+
+test('sends the same converted STRK amount for transfer and withdrawal prepare and submit', async () => {
+  const requests: WalletRequest[] = []
+  const executionWallet: InjectedWallet = {
+    id: 'strk-execution-wallet',
+    name: 'STRK Execution Wallet',
+    async request(call) {
+      requests.push(call)
+      if (call.type === 'wallet_strk20PrepareInvoke') {
+        return {
+          call: { contract_address: '0x1', entry_point: 'apply_actions', calldata: [] },
+          proof: { data: '', output: [], proof_facts: [] },
+        }
+      }
+      if (call.type === 'wallet_strk20InvokeTransaction') return { transaction_hash: '0x789' }
+      throw new Error(`Unexpected request: ${call.type}`)
+    },
+  }
+  const rawAmount = parseTokenAmount('0.5', 18)
+  assert.equal(rawAmount, '500000000000000000')
+  const session = createWalletSession(executionWallet, report({
+    walletId: executionWallet.id,
+    walletName: executionWallet.name,
+    balances: [{ token: strkToken, balance: '0xd02ab486cedc0000' }],
+  }))
+
+  for (const kind of ['transfer', 'withdraw'] as const) {
+    const snapshotResult = createExecutionSnapshot(session, {
+      kind,
+      token: strkToken,
+      amount: rawAmount,
+      recipient,
+    })
+    assert.equal(snapshotResult.ok, true)
+    if (!snapshotResult.ok) continue
+
+    const expectedAction = {
+      type: kind,
+      token: strkToken,
+      amount: '0x6f05b59d3b20000',
+      recipient,
+    }
+    assert.deepEqual(snapshotResult.snapshot.action, expectedAction)
+    await prepareInvoke(executionWallet, snapshotResult.snapshot.actions)
+    await submitInvoke(executionWallet, snapshotResult.snapshot.actions, {
+      networkConfirmed: true,
+      disclosuresConfirmed: true,
+      feeConfirmed: true,
+    })
+
+    const [prepareRequest, submitRequest] = requests.slice(-2)
+    assert.deepEqual(prepareRequest, {
+      type: 'wallet_strk20PrepareInvoke',
+      params: { actions: [expectedAction], simulate: true, api_version: '0.10.3' },
+    })
+    assert.deepEqual(submitRequest, {
+      type: 'wallet_strk20InvokeTransaction',
+      params: { actions: [expectedAction], api_version: '0.10.3' },
+    })
+  }
 })
 
 test('blocks snapshots for unknown tokens, excess amounts, and non-mainnet sessions', () => {

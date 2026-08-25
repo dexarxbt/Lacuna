@@ -328,6 +328,7 @@
 .execution-form select { width: 100%; min-height: 46px; padding: 0 12px; border: 1px solid #2c3744; border-radius: 9px; outline: 0; color: #d4dae0; background: #070a0e; font: 10px/1.4 ui-monospace,monospace; }
 .execution-form input:focus,
 .execution-form select:focus { border-color: rgba(180,248,200,.55); box-shadow: 0 0 0 3px rgba(180,248,200,.06); }
+.execution-amount-help { color: #6f7b88; font: 8px/1.5 ui-monospace,monospace; }
 .execution-form fieldset:disabled { opacity: .65; }
 .execution-simulate,
 .execution-submit { min-height: 46px; border: 1px solid rgba(180,248,200,.38); border-radius: 10px; color: #07100a; background: var(--private); font-size: 10px; font-weight: 650; cursor: pointer; }

@@ -545,6 +545,15 @@ export function formatWalletError(error: unknown): string {
   return describeRpcError(error)
 }
 
+export function walletErrorCode(error: unknown): number | undefined {
+  return rpcErrorCode(error)
+}
+
+export function isUnknownWalletError(error: unknown): boolean {
+  const normalized = normalizeRpcError(error)
+  return normalized.code === 163 || /\bUNKNOWN_ERROR\b/i.test(normalized.message)
+}
+
 export function isUserRejection(error: unknown): boolean {
   return rpcErrorCode(error) === 113
 }

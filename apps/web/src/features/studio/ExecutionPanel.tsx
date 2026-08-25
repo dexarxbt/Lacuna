@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   formatWalletError,
+  isUnknownWalletError,
   isUserRejection,
   prepareInvoke,
   probeWallet,
   submitInvoke,
+  walletErrorCode,
   type PreparedInvoke,
 } from '@lacuna/wallet-bridge'
 import {
@@ -15,6 +17,9 @@ import {
 import {
   createExecutionSnapshot,
   draftMatchesSnapshot,
+  formatTokenAmount,
+  getTokenAmountMetadata,
+  parseTokenAmount,
   sessionMatchesSnapshot,
   type ExecutionDraft,
   type ExecutionKind,
@@ -52,9 +57,33 @@ function shortFelt(value: string): string {
   return value.length > 20 ? `${value.slice(0, 10)}…${value.slice(-8)}` : value
 }
 
+function displayTokenAmount(token: string, amount: string): string {
+  const metadata = getTokenAmountMetadata(token)
+  const formatted = metadata ? formatTokenAmount(amount, metadata) : null
+  return formatted ?? `${amount} raw units`
+}
+
+function displayFrozenAmount(token: string, amount: string): string {
+  const formatted = displayTokenAmount(token, amount)
+  return formatted.endsWith('raw units') ? amount : `${formatted} · ${amount} raw`
+}
+
 function errorMessage(error: unknown): string {
   if (isUserRejection(error)) return 'The wallet request was rejected. Nothing was submitted.'
   return formatWalletError(error)
+}
+
+function walletActionErrorMessage(error: unknown, kind: ExecutionKind): string {
+  const formatted = errorMessage(error)
+  if (!isUnknownWalletError(error)) return formatted
+
+  const unknownDescription = walletErrorCode(error) === 163
+    ? 'Wallet code 163 is non-specific; the Wallet API does not identify an amount or payload field.'
+    : 'The wallet returned a non-specific UNKNOWN_ERROR without a numeric error code.'
+  const nextCheck = kind === 'transfer'
+    ? 'Confirm the recipient is registered with STRK20 and that the private notes are mature.'
+    : 'Confirm the private notes are mature and the public destination is a valid Starknet account.'
+  return `${formatted}. ${unknownDescription} ${nextCheck}`
 }
 
 export function ExecutionPanel({ session, onSessionChange }: ExecutionPanelProps) {
@@ -76,7 +105,9 @@ export function ExecutionPanel({ session, onSessionChange }: ExecutionPanelProps
 
   const balances = session?.report.balances ?? []
   const allConsent = consent.network && consent.disclosures && consent.fee
-  const draft: ExecutionDraft = { kind, token, amount, recipient }
+  const amountMetadata = getTokenAmountMetadata(token)
+  const rawAmount = amountMetadata ? parseTokenAmount(amount, amountMetadata.decimals) ?? '' : amount
+  const draft: ExecutionDraft = { kind, token, amount: rawAmount, recipient }
 
   useEffect(() => {
     sessionRef.current = session
@@ -134,6 +165,11 @@ export function ExecutionPanel({ session, onSessionChange }: ExecutionPanelProps
 
   async function simulate() {
     if (busy !== null) return
+    if (amountMetadata && rawAmount === '') {
+      setErrors([`Enter a valid ${amountMetadata.symbol} amount with at most ${amountMetadata.decimals} decimal places.`])
+      setMessage('Simulation is blocked until the token amount is valid.')
+      return
+    }
     const startingSession = sessionRef.current
     if (startingSession === null) {
       setErrors(['Run Wallet Doctor and select a compatible Mainnet wallet first.'])
@@ -172,7 +208,7 @@ export function ExecutionPanel({ session, onSessionChange }: ExecutionPanelProps
       setReceiptCheck(null)
       setMessage('Simulation succeeded. Review the frozen action and confirm each gate.')
     } catch (error) {
-      setErrors([errorMessage(error)])
+      setErrors([walletActionErrorMessage(error, kind)])
       setMessage('Simulation did not complete. No transaction was submitted.')
     } finally {
       setBusy(null)
@@ -263,7 +299,7 @@ export function ExecutionPanel({ session, onSessionChange }: ExecutionPanelProps
       setMessage('Transaction hash returned. This means submitted, not verified.')
       await verifyReceipt(result.transaction_hash, prepared.snapshot)
     } catch (error) {
-      setErrors([errorMessage(error)])
+      setErrors([walletActionErrorMessage(error, kind)])
       setMessage('Submission stopped or failed before a valid transaction hash returned. Lacuna did not retry.')
       setBusy(null)
     } finally {
@@ -302,23 +338,28 @@ export function ExecutionPanel({ session, onSessionChange }: ExecutionPanelProps
                 <option disabled value="">Run Wallet Doctor to load tokens</option>
                 {balances.map((balance) => (
                   <option key={balance.token} value={balance.token}>
-                    {shortFelt(balance.token)} · balance {balance.balance}
+                    {shortFelt(balance.token)} · balance {displayTokenAmount(balance.token, balance.balance)}
                   </option>
                 ))}
               </select>
             </label>
 
             <label>
-              Amount in raw base units
+              {amountMetadata ? `Amount (${amountMetadata.symbol})` : 'Amount in raw base units'}
               <input
                 autoComplete="off"
-                inputMode="numeric"
+                inputMode={amountMetadata ? 'decimal' : 'numeric'}
                 onChange={(event) => changeAmount(event.target.value)}
-                placeholder="Decimal or canonical 0x felt"
+                placeholder={amountMetadata ? 'Example: 1 or 0.5' : 'Decimal raw units or canonical 0x felt'}
                 required
                 spellCheck={false}
                 value={amount}
               />
+              {amountMetadata && (
+                <small className="execution-amount-help">
+                  Enter normal {amountMetadata.symbol} units. The wallet receives the exact {amountMetadata.decimals}-decimal raw value shown in review.
+                </small>
+              )}
             </label>
 
             <label>
@@ -352,7 +393,7 @@ export function ExecutionPanel({ session, onSessionChange }: ExecutionPanelProps
                 <div><dt>Action</dt><dd>{prepared.snapshot.action.type === 'transfer' ? 'Private transfer' : 'Withdraw'}</dd></div>
                 <div><dt>Account</dt><dd title={prepared.snapshot.account}>{shortFelt(prepared.snapshot.account)}</dd></div>
                 <div><dt>Token</dt><dd title={'token' in prepared.snapshot.action ? prepared.snapshot.action.token : ''}>{'token' in prepared.snapshot.action ? shortFelt(prepared.snapshot.action.token) : ''}</dd></div>
-                <div><dt>Amount</dt><dd>{'amount' in prepared.snapshot.action ? prepared.snapshot.action.amount : ''}</dd></div>
+                <div><dt>Amount</dt><dd>{'amount' in prepared.snapshot.action && 'token' in prepared.snapshot.action ? displayFrozenAmount(prepared.snapshot.action.token, prepared.snapshot.action.amount) : ''}</dd></div>
                 <div><dt>Recipient</dt><dd title={'recipient' in prepared.snapshot.action ? prepared.snapshot.action.recipient : ''}>{'recipient' in prepared.snapshot.action ? shortFelt(prepared.snapshot.action.recipient) : ''}</dd></div>
                 <div><dt>Wallet call</dt><dd>{shortFelt(prepared.simulation.call.contractAddress)} / {prepared.simulation.call.entryPoint}</dd></div>
               </dl>

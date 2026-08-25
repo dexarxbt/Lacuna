@@ -14,7 +14,7 @@ import {
 
 const token = '0x123' as const
 const recipient = '0x456' as const
-const transfer: Strk20Action[] = [{ type: 'transfer', token, amount: '1', recipient }]
+const transfer: Strk20Action[] = [{ type: 'transfer', token, amount: '0x1', recipient }]
 
 function mockWallet(handler: (call: WalletRequest) => unknown): InjectedWallet {
   return {

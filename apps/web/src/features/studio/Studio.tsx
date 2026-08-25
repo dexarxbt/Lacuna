@@ -77,7 +77,7 @@ const prepared = await account
     return `// Withdrawal exposes destination and amount.
 const actions = [
   {
-    type: "transfer",
+    type: "withdraw",
     token,
     amount,
     recipient: publicDestination,

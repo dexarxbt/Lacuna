@@ -4,8 +4,7 @@ import { EvidenceLedger } from '../components/EvidenceLedger'
 import { evidenceSummary } from '../evidence'
 import './landing.css'
 
-const evidenceThreshold = evidenceSummary.minimumMet ? 'MINIMUM MET' : 'MINIMUM PENDING'
-const evidenceStatus = `${evidenceSummary.verifiedCount} VERIFIED · ${evidenceThreshold}`
+const evidenceStatus = `${evidenceSummary.verifiedCount} VERIFIED · APPEND-ONLY`
 const evidenceDetail = `${evidenceSummary.verifiedCount} accepted Mainnet pool receipts are committed in the public evidence index.`
 
 const checkpoints = [
@@ -158,7 +157,7 @@ export function LandingPage() {
           <div><span>TARGET</span><strong>Starknet Mainnet</strong></div>
           <div><span>PROTOCOL</span><strong>STRK20</strong></div>
           <div><span>STUDIO</span><strong className="status-ready">Simulate · review · approve</strong></div>
-          <div><span>TRANSACTIONS</span><strong className="status-ready">{evidenceSummary.verifiedCount} verified · {evidenceThreshold.toLowerCase()}</strong></div>
+          <div><span>TRANSACTIONS</span><strong className="status-ready">{evidenceSummary.verifiedCount} verified · append-only ledger</strong></div>
         </div>
       </section>
 

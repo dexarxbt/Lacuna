@@ -72,6 +72,7 @@ type RpcError = Error & { code?: number }
 
 const ADDRESS_PATTERN = /^0x[0-9a-f]+$/i
 const AMOUNT_PATTERN = /^(0x[0-9a-f]+|\d+)$/i
+const WIRE_FELT_PATTERN = /^0x(?:0|[1-9a-fA-F][0-9a-fA-F]{0,62})$/
 const WALLET_API_VERSION_PATTERN = /^\d+\.\d+\.\d+$/
 const STARKNET_FIELD_PRIME = 0x800000000000011000000000000000000000000000000000000000000000001n
 const MAX_ACTIONS = 8
@@ -404,6 +405,9 @@ function assertAddress(value: string, label: string): asserts value is Address {
 }
 
 function assertAmount(value: string, label: string): void {
+  if (!WIRE_FELT_PATTERN.test(value)) {
+    throw new Error(`${label} must be a canonical 0x-prefixed felt amount.`)
+  }
   const felt = parsedFelt(value)
   if (felt === null || felt <= 0n) throw new Error(`${label} must be a positive felt amount.`)
 }
@@ -535,6 +539,10 @@ export async function submitInvoke(
     params: { actions, api_version: REQUIRED_WALLET_API },
   })
   return parseSubmittedInvoke(response)
+}
+
+export function formatWalletError(error: unknown): string {
+  return describeRpcError(error)
 }
 
 export function isUserRejection(error: unknown): boolean {

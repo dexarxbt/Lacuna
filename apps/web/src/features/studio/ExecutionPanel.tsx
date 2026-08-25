@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
+  formatWalletError,
   isUserRejection,
   prepareInvoke,
   probeWallet,
@@ -53,7 +54,7 @@ function shortFelt(value: string): string {
 
 function errorMessage(error: unknown): string {
   if (isUserRejection(error)) return 'The wallet request was rejected. Nothing was submitted.'
-  return error instanceof Error ? error.message : String(error)
+  return formatWalletError(error)
 }
 
 export function ExecutionPanel({ session, onSessionChange }: ExecutionPanelProps) {
@@ -313,7 +314,7 @@ export function ExecutionPanel({ session, onSessionChange }: ExecutionPanelProps
                 autoComplete="off"
                 inputMode="numeric"
                 onChange={(event) => changeAmount(event.target.value)}
-                placeholder="Positive decimal or 0x felt"
+                placeholder="Decimal or canonical 0x felt"
                 required
                 spellCheck={false}
                 value={amount}

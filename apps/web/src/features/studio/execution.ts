@@ -44,7 +44,7 @@ function sameFelt(left: string, right: string): boolean {
 function actionFromDraft(draft: ExecutionDraft): Strk20Action {
   const common = {
     token: draft.token as Address,
-    amount: draft.amount,
+    amount: canonicalFelt(draft.amount) ?? draft.amount,
     recipient: draft.recipient as Address,
   }
   return draft.kind === 'transfer'

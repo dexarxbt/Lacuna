@@ -43,7 +43,7 @@ test('renders the ledger from the full transaction collection with public eviden
   assert.match(component, /verifiedTransactions\.map/)
   assert.match(component, /transaction\.explorerUrl/)
   assert.match(component, /rawReceiptUrl\(transaction\.transactionHash\)/)
-  assert.match(component, /Submission minimum met/)
+  assert.match(component, /Verified evidence · append-only/)
 })
 
 test('does not present the current transaction count as a fixed ceiling', async () => {

@@ -81,6 +81,7 @@ test('creates an immutable action snapshot only from fresh wallet-reported balan
   assert.ok(Object.isFrozen(result.snapshot))
   assert.ok(Object.isFrozen(result.snapshot.action))
   assert.ok(Object.isFrozen(result.snapshot.actions))
+  assert.equal(result.snapshot.action.type === 'transfer' ? result.snapshot.action.amount : '', '0x19')
   assert.equal(draftMatchesSnapshot(draft, result.snapshot), true)
   assert.equal(draftMatchesSnapshot({ ...draft, amount: '26' }, result.snapshot), false)
   assert.equal(sessionMatchesSnapshot(session, result.snapshot), true)

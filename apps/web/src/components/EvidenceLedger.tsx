@@ -35,9 +35,9 @@ export function EvidenceLedger() {
           <span>VERIFIED RECEIPTS</span>
           <strong>{evidenceSummary.verifiedCount}</strong>
         </div>
-        <p className={evidenceSummary.minimumMet ? 'status-ready' : 'status-pending'}>
+        <p className="status-ready">
           <i aria-hidden="true" />
-          {evidenceSummary.minimumMet ? 'Submission minimum met' : 'Submission minimum pending'}
+          Verified evidence · append-only
         </p>
       </div>
 

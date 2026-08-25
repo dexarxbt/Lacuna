@@ -1,46 +1,74 @@
 # Security policy
 
-Lacuna is an unaudited sprint build. Do not use it with funds you cannot afford to lose.
+Lacuna is unaudited sprint software. Do not use it with funds you cannot afford to lose.
 
 ## Trust boundary
 
-Lacuna may construct STRK20 action descriptions, classify disclosures, query wallet capabilities, request a non-submittable simulation, and verify public receipts. It must never request, receive, store, log, or transmit:
+Lacuna may classify STRK20 disclosures, probe wallet capabilities, validate transfer/withdraw action descriptions, request a non-submittable simulation, request an explicitly approved submission, and verify public receipts. It must never ask the user for, persist, log, render, or transmit onward:
 
 - a mnemonic or seed phrase;
 - a Starknet private key;
 - a private viewing key;
-- raw private notes or note decryption material;
+- raw private notes or note-decryption material;
 - proof secrets;
 - an exported wallet backup.
 
-The supported wallet owns private-state discovery, proof generation, signing, and submission. The static deployment has no application server or database.
+The injected wallet owns private-state discovery, proof generation, signing, fee presentation, and final approval. The static deployment has no application server, database, analytics SDK, or session replay.
 
-## Current execution status
+## Current execution boundary
 
-The web studio exposes only a transaction-read-only capability doctor. With user approval, the probe receives wallet identity, account, network, API versions, and returned STRK20 token identifiers and shielded balances; it retains this result in page memory and sends it to no Lacuna backend or analytics service. Although the internal bridge models preparation and consent-gated submission, the interface keeps both disabled until real action inputs, simulation output, fee review, and failure recovery are complete.
+The web Studio exposes only validated private transfer and withdrawal actions. Arbitrary external invoke is not exposed because this repository has no trusted helper allowlist, code-hash verification, ABI, or deterministic calldata encoder.
 
-## Safe mainnet use
+Simulation:
 
-1. Create a dedicated wallet through an official supported wallet interface.
+1. re-requests the current account, chain, API information, and STRK20 balances;
+2. requires `SN_MAIN`, a registered account, the required API evidence, and a token returned by the wallet;
+3. validates the recipient, positive raw amount, wallet-reported balance, felt range, action count, and calldata bounds;
+4. freezes the action snapshot;
+5. calls `wallet_strk20PrepareInvoke` with `simulate: true`;
+6. validates the wallet response and discards proof material before it reaches UI state.
+
+Submission:
+
+1. requires the exact unchanged simulated action and matching wallet/account/network;
+2. requires separate network, disclosure, and final-fee-in-wallet acknowledgements;
+3. makes one `wallet_strk20InvokeTransaction` request under a single-flight guard;
+4. never automatically retries a transaction;
+5. treats a returned hash as submitted, not verified;
+6. performs a bounded independent public receipt check.
+
+Lacuna does not provide a trusted fee estimate. Review and approve the final fee only in the wallet.
+
+## Wallet Doctor disclosure
+
+The Doctor is read-only with respect to transactions, not privacy-neutral. After explicit approval, the page receives wallet identity, account, network, API versions, token identifiers, and private balance values. Wallet Doctor summarizes the token-entry count, while the execution selector displays shortened token identifiers and exact wallet-reported private balances. Those local values are visible on screen and can appear in screenshots or recordings. The result remains in page memory and is sent to no Lacuna backend or analytics service. The injected wallet and its own infrastructure remain outside Lacuna's control.
+
+The Doctor proves only `wallet_strk20Balances`. Prepare and submit are marked proven only after their explicit user-initiated calls succeed.
+
+## Safe Mainnet use
+
+1. Use an official supported wallet and a dedicated account.
 2. Back up recovery material offline; never share it with Lacuna or its maintainer.
-3. Fund only the amount required for the planned actions and fees.
-4. Confirm `SN_MAIN` and the pool address shown in `docs/mainnet-verification.md`.
-5. Review every public disclosure, token, amount, recipient, helper, and estimated fee.
-6. Reject unexpected wallet prompts.
-7. Re-check the public receipt through a provider you trust after settlement.
+3. Fund only the intended action amount plus fees.
+4. Confirm `SN_MAIN` and the pool address in `docs/mainnet-verification.md`.
+5. Review the exact token, raw amount, recipient, disclosure boundary, and wallet fee.
+6. Reject unexpected prompts or changed values.
+7. After submission, independently verify the receipt through a provider you trust.
 
 ## Browser and deployment controls
 
-- No analytics or session-replay SDK is installed.
-- External fonts and image hosts are not used.
-- Vercel headers deny framing, MIME sniffing, forms, plugins, and sensitive browser permissions.
+- No analytics, session replay, external fonts, or third-party image hosts.
+- CSP allows application connections only to the configured Starknet RPC.
+- Framing, plugins, forms, camera, microphone, and geolocation are denied.
 - Runtime dependencies are exact-pinned and locked.
-- CI installs from the lockfile with package scripts disabled.
-- Wallet discovery is user-triggered and limited to injected Starknet providers.
+- CI uses `npm ci --ignore-scripts` and read-only repository permissions.
+- Wallet discovery occurs only after user interaction.
 
 ## Public evidence
 
-Evidence files may contain transaction hashes, pool events, fees, block numbers, relayer addresses, and timestamps. They must not contain wallet secrets, private recipe values, screenshots of recovery material, or claims that cannot be derived from public receipts.
+Evidence may contain transaction hashes, pool events, fees, block numbers, relayer addresses, and timestamps. It must not contain wallet secrets, private recipe inputs, proof material, screenshots of recovery data, or claims not derivable from public receipts.
+
+The default RPC is a trust dependency. Evidence is re-checkable through another provider but is not a cryptographic state proof or multi-provider attestation.
 
 ## Reporting a vulnerability
 
@@ -52,4 +80,4 @@ Do not publish an exploitable report as a GitHub issue. Contact `dexarxbt@gmail.
 - likely impact;
 - no mnemonic, private key, viewing key, or real private transaction data.
 
-Reports are acknowledged on a best-effort basis during the sprint. There is currently no bug-bounty program.
+Reports are acknowledged on a best-effort basis during the sprint. There is no bug-bounty program.

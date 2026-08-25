@@ -1,3 +1,4 @@
+import { evidenceSummary } from '../evidence'
 import { Studio } from '../features/studio/Studio'
 import '../features/studio/studio.css'
 
@@ -10,7 +11,8 @@ export function StudioPage() {
           <h1 id="studio-route-title">Inspect the private path<br /><em>before you sign</em></h1>
           <p>
             Trace disclosures, protocol constraints, and wallet capabilities across a
-            supported STRK20 recipe. Transaction preparation and submission remain locked.
+            supported STRK20 recipe. Private transfer and withdrawal require a fresh
+            simulation, explicit review, and final approval in your wallet.
           </p>
           <a className="button secondary" href="#studio">Open the workbench <span aria-hidden="true">↓</span></a>
         </div>
@@ -30,9 +32,9 @@ export function StudioPage() {
         <dl className="studio-context-bar" aria-label="Current Studio boundaries">
           <div><dt>NETWORK TARGET</dt><dd><i className="context-dot ready" /> SN_MAIN</dd></div>
           <div><dt>PROTOCOL</dt><dd>STRK20</dd></div>
-          <div><dt>MODE</dt><dd><i className="context-dot readonly" /> INSPECTION ONLY</dd></div>
-          <div><dt>EXECUTION</dt><dd><i className="context-dot locked" /> LOCKED</dd></div>
-          <div><dt>EVIDENCE</dt><dd>3 / 3 COMMITTED</dd></div>
+          <div><dt>MODE</dt><dd><i className="context-dot readonly" /> INSPECT + EXECUTE</dd></div>
+          <div><dt>EXECUTION</dt><dd><i className="context-dot locked" /> CONSENT GATED</dd></div>
+          <div><dt>TRANSACTIONS</dt><dd>{evidenceSummary.verifiedCount} VERIFIED</dd></div>
         </dl>
       </section>
 

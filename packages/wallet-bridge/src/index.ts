@@ -57,25 +57,25 @@ export type ExecutionConsent = {
   feeConfirmed: true
 }
 
-export type PreparedInvoke = {
-  call: {
-    contract_address: string
-    entry_point: string
-    calldata?: string[]
-  }
-  proof: {
-    data: string
-    output: string[]
-    proof_facts: string[]
-  }
-}
+export type PreparedInvoke = Readonly<{
+  simulated: true
+  call: Readonly<{
+    contractAddress: Address
+    entryPoint: string
+    calldataLength: number
+  }>
+}>
 
-export type SubmittedInvoke = { transaction_hash: string }
+export type SubmittedInvoke = Readonly<{ transaction_hash: string }>
 
 type RpcError = Error & { code?: number }
 
 const ADDRESS_PATTERN = /^0x[0-9a-f]+$/i
 const AMOUNT_PATTERN = /^(0x[0-9a-f]+|\d+)$/i
+const WALLET_API_VERSION_PATTERN = /^\d+\.\d+\.\d+$/
+const STARKNET_FIELD_PRIME = 0x800000000000011000000000000000000000000000000000000000000000001n
+const MAX_ACTIONS = 8
+const MAX_CALLDATA_ITEMS = 128
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -248,7 +248,10 @@ export function discoverInjectedWallets(scope: Record<string, unknown>): Injecte
 
 async function requestStrings(wallet: InjectedWallet, type: string, params?: unknown): Promise<string[]> {
   const value = await wallet.request({ type, ...(params === undefined ? {} : { params }) })
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
+  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) {
+    throw new Error(`${type} returned a malformed string array.`)
+  }
+  return value
 }
 
 function parseBalances(value: unknown): Array<{ token: string; balance: string }> | null {
@@ -256,13 +259,13 @@ function parseBalances(value: unknown): Array<{ token: string; balance: string }
   const balances: Array<{ token: string; balance: string }> = []
   for (const entry of value) {
     const record = asRecord(entry)
-    if (
-      !record
-      || typeof record.token !== 'string'
-      || !ADDRESS_PATTERN.test(record.token)
-      || typeof record.balance !== 'string'
-      || !AMOUNT_PATTERN.test(record.balance)
-    ) return null
+    if (!record || typeof record.token !== 'string' || typeof record.balance !== 'string') return null
+    try {
+      assertAddress(record.token, 'Balance token')
+    } catch {
+      return null
+    }
+    if (parsedFelt(record.balance) === null) return null
     balances.push({ token: record.token, balance: record.balance })
   }
   return balances
@@ -272,6 +275,7 @@ export async function probeWallet(wallet: InjectedWallet, requestAccount = true)
   let account: string | null = null
   let chainId: string | null = null
   let apiVersions: string[] = []
+  let apiVersionResponseMalformed = false
   let strk20Status: Strk20SupportStatus = 'indeterminate'
   let balanceResponseSucceeded = false
   let registered: boolean | null = null
@@ -281,8 +285,13 @@ export async function probeWallet(wallet: InjectedWallet, requestAccount = true)
 
   if (requestAccount) {
     try {
-      account = (await requestStrings(wallet, 'wallet_requestAccounts'))[0] ?? null
-      if (!account) details.push('The wallet returned no active account.')
+      const selectedAccount = (await requestStrings(wallet, 'wallet_requestAccounts'))[0] ?? null
+      if (selectedAccount === null) {
+        details.push('The wallet returned no active account.')
+      } else {
+        assertAddress(selectedAccount, 'Selected account')
+        account = selectedAccount
+      }
     } catch (error) {
       details.push(`Account access failed: ${describeRpcError(error)}`)
     }
@@ -297,9 +306,10 @@ export async function probeWallet(wallet: InjectedWallet, requestAccount = true)
 
   try {
     const value = await wallet.request({ type: 'wallet_supportedWalletApi' })
-    if (Array.isArray(value) && value.every((item) => typeof item === 'string')) {
+    if (Array.isArray(value) && value.every((item) => typeof item === 'string' && WALLET_API_VERSION_PATTERN.test(item))) {
       apiVersions = value
     } else {
+      apiVersionResponseMalformed = true
       details.push('Wallet API version lookup returned an invalid response.')
     }
   } catch (error) {
@@ -318,15 +328,17 @@ export async function probeWallet(wallet: InjectedWallet, requestAccount = true)
       balances = parsedBalances
       balanceResponseSucceeded = true
       strk20Status = 'supported'
-      registered = true
+      registered = account === null ? null : true
       details.push('The wallet answered the read-only STRK20 balance probe.')
     }
   } catch (error) {
     balanceFailureCode = rpcErrorCode(error)
     if (balanceFailureCode === 118) {
       strk20Status = 'supported'
-      registered = false
-      details.push('STRK20 is supported, but this account is not registered with the pool.')
+      registered = account === null ? null : false
+      details.push(account === null
+        ? 'STRK20 is supported, but NOT_REGISTERED could not be attributed to a valid selected account.'
+        : 'STRK20 is supported, but this account is not registered with the pool.')
     } else if (isUnsupportedMethod(error)) {
       strk20Status = 'unsupported'
       details.push(`The wallet does not expose the STRK20 balance method: ${describeRpcError(error)}`)
@@ -336,7 +348,7 @@ export async function probeWallet(wallet: InjectedWallet, requestAccount = true)
   }
 
   const advertisedApiSupport = apiVersions.some((version) => compareVersions(version, REQUIRED_WALLET_API) >= 0)
-  const inferredApiSupport = apiVersions.length === 0 && balanceResponseSucceeded
+  const inferredApiSupport = !apiVersionResponseMalformed && apiVersions.length === 0 && balanceResponseSucceeded
   const apiVersionRejected = balanceFailureCode === 162
   const meetsRequiredApi = !apiVersionRejected && (advertisedApiSupport || inferredApiSupport)
   const apiVersionStatus: WalletApiStatus = apiVersionRejected
@@ -376,17 +388,37 @@ export async function probeWallet(wallet: InjectedWallet, requestAccount = true)
   }
 }
 
+function parsedFelt(value: string): bigint | null {
+  if (!AMOUNT_PATTERN.test(value)) return null
+  try {
+    const felt = BigInt(value)
+    return felt < STARKNET_FIELD_PRIME ? felt : null
+  } catch {
+    return null
+  }
+}
+
 function assertAddress(value: string, label: string): asserts value is Address {
-  if (!ADDRESS_PATTERN.test(value)) throw new Error(`${label} must be a Starknet hex address.`)
+  const felt = ADDRESS_PATTERN.test(value) ? parsedFelt(value) : null
+  if (felt === null || felt === 0n) throw new Error(`${label} must be a non-zero Starknet hex address.`)
 }
 
 function assertAmount(value: string, label: string): void {
-  if (!AMOUNT_PATTERN.test(value) || BigInt(value) <= 0n) throw new Error(`${label} must be a positive felt amount.`)
+  const felt = parsedFelt(value)
+  if (felt === null || felt <= 0n) throw new Error(`${label} must be a positive felt amount.`)
 }
 
-export function validateActions(actions: Strk20Action[]): string[] {
+function assertCalldataItem(value: string, label: string): void {
+  if (parsedFelt(value) === null) throw new Error(`${label} must be a Starknet felt.`)
+}
+
+export function validateActions(actions: readonly Strk20Action[]): string[] {
   const errors: string[] = []
   if (actions.length === 0) errors.push('At least one STRK20 action is required.')
+  if (actions.length > MAX_ACTIONS) errors.push(`A private transaction can contain at most ${MAX_ACTIONS} actions.`)
+  if (actions.some(({ type }) => type === 'invoke')) {
+    errors.push('Arbitrary private invoke is unavailable without a trusted helper allowlist, code-hash policy, ABI, and deterministic calldata encoder.')
+  }
   if (actions.filter(({ type }) => type === 'invoke').length > 1) {
     errors.push('A private transaction can contain only one external invoke.')
   }
@@ -395,6 +427,12 @@ export function validateActions(actions: Strk20Action[]): string[] {
     try {
       if (action.type === 'invoke') {
         assertAddress(action.contract, `Action ${index + 1} contract`)
+        if (action.calldata.length > MAX_CALLDATA_ITEMS) {
+          throw new Error(`Action ${index + 1} calldata can contain at most ${MAX_CALLDATA_ITEMS} felts.`)
+        }
+        action.calldata.forEach((item, calldataIndex) => {
+          assertCalldataItem(item, `Action ${index + 1} calldata item ${calldataIndex + 1}`)
+        })
       } else {
         assertAddress(action.token, `Action ${index + 1} token`)
         if (action.amount !== 'OPEN') assertAmount(action.amount, `Action ${index + 1} amount`)
@@ -410,20 +448,70 @@ export function validateActions(actions: Strk20Action[]): string[] {
   return errors
 }
 
-function assertValidActions(actions: Strk20Action[]): void {
+function assertValidActions(actions: readonly Strk20Action[]): void {
   const errors = validateActions(actions)
   if (errors.length > 0) throw new Error(errors.join(' '))
 }
 
+function parsePreparedInvoke(value: unknown): PreparedInvoke {
+  const response = asRecord(value)
+  const call = asRecord(response?.call)
+  const proof = asRecord(response?.proof)
+  const calldata = call?.calldata === undefined ? [] : call.calldata
+
+  if (
+    response === null
+    || call === null
+    || proof === null
+    || typeof call.contract_address !== 'string'
+    || typeof call.entry_point !== 'string'
+    || call.entry_point.length === 0
+    || call.entry_point.length > 128
+    || !Array.isArray(calldata)
+    || calldata.some((item) => typeof item !== 'string' || parsedFelt(item) === null)
+    || typeof proof.data !== 'string'
+    || !Array.isArray(proof.output)
+    || proof.output.some((item) => typeof item !== 'string')
+    || !Array.isArray(proof.proof_facts)
+    || proof.proof_facts.some((item) => typeof item !== 'string')
+  ) {
+    throw new Error('Wallet returned a malformed STRK20 simulation response.')
+  }
+
+  assertAddress(call.contract_address, 'Prepared call contract')
+  return Object.freeze({
+    simulated: true as const,
+    call: Object.freeze({
+      contractAddress: call.contract_address,
+      entryPoint: call.entry_point,
+      calldataLength: calldata.length,
+    }),
+  })
+}
+
+function parseSubmittedInvoke(value: unknown): SubmittedInvoke {
+  const response = asRecord(value)
+  if (response === null || typeof response.transaction_hash !== 'string') {
+    throw new Error('Wallet returned a malformed STRK20 submission response.')
+  }
+  const transactionHash = response.transaction_hash
+  const felt = ADDRESS_PATTERN.test(transactionHash) ? parsedFelt(transactionHash) : null
+  if (felt === null || felt === 0n) {
+    throw new Error('Wallet returned an invalid Starknet transaction hash.')
+  }
+  return Object.freeze({ transaction_hash: transactionHash })
+}
+
 export async function prepareInvoke(
   wallet: InjectedWallet,
-  actions: Strk20Action[],
+  actions: readonly Strk20Action[],
 ): Promise<PreparedInvoke> {
   assertValidActions(actions)
-  return await wallet.request({
+  const response = await wallet.request({
     type: 'wallet_strk20PrepareInvoke',
     params: { actions, simulate: true, api_version: REQUIRED_WALLET_API },
-  }) as PreparedInvoke
+  })
+  return parsePreparedInvoke(response)
 }
 
 function hasConsent(value: Partial<ExecutionConsent>): value is ExecutionConsent {
@@ -434,7 +522,7 @@ function hasConsent(value: Partial<ExecutionConsent>): value is ExecutionConsent
 
 export async function submitInvoke(
   wallet: InjectedWallet,
-  actions: Strk20Action[],
+  actions: readonly Strk20Action[],
   consent: Partial<ExecutionConsent>,
 ): Promise<SubmittedInvoke> {
   assertValidActions(actions)
@@ -442,10 +530,11 @@ export async function submitInvoke(
     throw new Error('Execution requires explicit network, disclosure, and fee confirmation.')
   }
 
-  return await wallet.request({
+  const response = await wallet.request({
     type: 'wallet_strk20InvokeTransaction',
     params: { actions, api_version: REQUIRED_WALLET_API },
-  }) as SubmittedInvoke
+  })
+  return parseSubmittedInvoke(response)
 }
 
 export function isUserRejection(error: unknown): boolean {

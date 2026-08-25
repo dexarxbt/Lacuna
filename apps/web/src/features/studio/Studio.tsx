@@ -3,18 +3,16 @@ import {
   analyzeRecipe,
   recipes,
   type AnalyzedStep,
-  type Capability,
   type StepKind,
   type Visibility,
 } from '@lacuna/recipe-engine'
 import { LacunaMark } from '../../components/LacunaMark'
 import { WalletDoctor } from '../wallet-doctor/WalletDoctor'
-
-const previewCapabilities: Capability[] = [
-  'strk20Balances',
-  'strk20PrepareInvoke',
-  'strk20InvokeTransaction',
-]
+import { ExecutionPanel } from './ExecutionPanel'
+import {
+  provenRecipeCapabilities,
+  type WalletSession,
+} from '../wallet-doctor/walletSession'
 
 const visibilityLabel: Record<Visibility, string> = {
   private: 'Private',
@@ -38,9 +36,9 @@ const productCheckpoints = [
   { name: 'Inspect', status: 'IMPLEMENTED', tone: 'ready' },
   { name: 'Validate', status: 'TESTED', tone: 'ready' },
   { name: 'Probe', status: 'READ-ONLY', tone: 'readonly' },
-  { name: 'Simulate', status: 'GATED', tone: 'gated' },
-  { name: 'Review', status: 'LOCKED', tone: 'locked' },
-  { name: 'Verify', status: 'EVIDENCE COMMITTED', tone: 'ready' },
+  { name: 'Simulate', status: 'USER-INITIATED', tone: 'gated' },
+  { name: 'Review', status: 'CONSENT-GATED', tone: 'gated' },
+  { name: 'Verify', status: 'RECEIPT CHECK', tone: 'ready' },
 ] as const
 
 function codePreview(step: AnalyzedStep): string {
@@ -122,14 +120,39 @@ export function Studio() {
   const [activeRecipeId, setActiveRecipeId] = useState(recipes[0].id)
   const [selectedStepId, setSelectedStepId] = useState(recipes[0].steps[0].id)
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>('visibility')
+  const [walletSession, setWalletSession] = useState<WalletSession | null>(null)
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([])
 
   const activeRecipe = recipes.find(({ id }) => id === activeRecipeId) ?? recipes[0]
+  const provenCapabilities = useMemo(
+    () => provenRecipeCapabilities(walletSession),
+    [walletSession],
+  )
+  const provenCapabilitySet = useMemo(
+    () => new Set(provenCapabilities),
+    [provenCapabilities],
+  )
   const analysis = useMemo(
-    () => analyzeRecipe(activeRecipe, { capabilities: previewCapabilities }),
-    [activeRecipe],
+    () => analyzeRecipe(activeRecipe, { capabilities: provenCapabilities }),
+    [activeRecipe, provenCapabilities],
   )
   const selectedStep = analysis.steps.find(({ id }) => id === selectedStepId) ?? analysis.steps[0]
+  const walletHealth = walletSession === null
+    ? { title: 'Wallet check required', detail: 'No runtime method evidence collected yet.' }
+    : walletSession.report.strk20Status === 'supported'
+      ? { title: 'Read method proven', detail: 'Prepare and submit remain unproven.' }
+      : { title: 'Wallet check incomplete', detail: 'The balance method was not proven.' }
+  const unsupportedPrivateInvoke = analysis.diagnostics.find(
+    ({ code }) => code === 'unsupported-private-invoke',
+  )
+  const recipeHealth = unsupportedPrivateInvoke
+    ? { title: 'Recipe execution unavailable', detail: unsupportedPrivateInvoke.message }
+    : analysis.isExecutable
+      ? {
+          title: 'Model and method checks pass',
+          detail: 'Live action inputs and protocol state are revalidated in the execution review.',
+        }
+      : walletHealth
 
   function selectRecipe(recipeId: string) {
     const nextRecipe = recipes.find(({ id }) => id === recipeId) ?? recipes[0]
@@ -184,9 +207,9 @@ export function Studio() {
           <div className="mini-brand"><LacunaMark /><span>LACUNA / {activeRecipe.id}</span></div>
           <div className="studio-topbar-signals" aria-label="Workbench mode">
             <span><i className="signal-mainnet" /> SN_MAIN</span>
-            <span><i className="signal-preview" /> PREVIEW MODEL</span>
+            <span><i className="signal-preview" /> {walletSession ? 'RUNTIME CHECKED' : 'WALLET UNCHECKED'}</span>
           </div>
-          <WalletDoctor />
+          <WalletDoctor session={walletSession} onSessionChange={setWalletSession} />
         </div>
 
         <div className="studio-body interactive-body">
@@ -219,8 +242,8 @@ export function Studio() {
             <div className="recipe-health">
               <span className={analysis.isExecutable ? 'health-dot ready' : 'health-dot'} />
               <div>
-                <b>{analysis.isExecutable ? 'Preview checks clear' : 'Recipe needs attention'}</b>
-                <small>Runtime wallet state is checked separately</small>
+                <b>{recipeHealth.title}</b>
+                <small>{recipeHealth.detail}</small>
               </div>
             </div>
           </aside>
@@ -329,11 +352,26 @@ export function Studio() {
 
               {inspectorTab === 'checks' && (
                 <div className="check-list">
-                  {selectedStep.requiredCapabilities.length > 0 ? selectedStep.requiredCapabilities.map((capability) => (
-                    <div key={capability}><i className="check-requirement" /><span>{capability}<small>Required wallet method · runtime status not assumed</small></span></div>
-                  )) : <div><i className="check-pass" /><span>Standard wallet action<small>No STRK20 extension method required</small></span></div>}
+                  {selectedStep.requiredCapabilities.length > 0 ? selectedStep.requiredCapabilities.map((capability) => {
+                    const isProven = provenCapabilitySet.has(capability)
+                    return (
+                      <div key={capability}>
+                        <i className={isProven ? 'check-pass' : 'check-fail'} />
+                        <span>
+                          {capability}
+                          <small>
+                            {isProven
+                              ? 'Proven by the current wallet probe'
+                              : walletSession
+                                ? 'Not proven by the current wallet probe'
+                                : 'Run Wallet Doctor to collect runtime evidence'}
+                          </small>
+                        </span>
+                      </div>
+                    )
+                  }) : <div><i className="check-pass" /><span>Standard wallet action<small>No STRK20 extension method required</small></span></div>}
                   {selectedStep.diagnostics.length === 0 ? (
-                    <div><i className="check-pass" /><span>Preview constraints clear<small>No blocking issue in the recipe model</small></span></div>
+                    <div><i className="check-pass" /><span>Runtime constraints clear<small>No blocking issue for this stage in the current session</small></span></div>
                   ) : selectedStep.diagnostics.map((item) => (
                     <div key={item.code}><i className="check-fail" /><span>{item.message}<small>{item.code}</small></span></div>
                   ))}
@@ -358,12 +396,14 @@ export function Studio() {
             <span><i className="wallet-dot" /> {analysis.disclosureCounts['wallet-held']} wallet-held</span>
           </div>
           <div className="dock-gate-copy">
-            <span><i /> EXECUTION LOCKED</span>
-            <small>Real inputs, simulation, review, and consent are not exposed in this build</small>
+            <span><i /> USER-INITIATED ONLY</span>
+            <small>Transfer and withdrawal require simulation, review, consent, and wallet approval</small>
           </div>
-          <button className="dock-action" disabled type="button"><span aria-hidden="true">◇</span> Simulation gated</button>
+          <a className="dock-action" href="#execution"><span aria-hidden="true">◇</span> Open execution review</a>
         </footer>
       </div>
+
+      <ExecutionPanel session={walletSession} onSessionChange={setWalletSession} />
     </section>
   )
 }

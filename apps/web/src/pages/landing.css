@@ -572,3 +572,58 @@
 @media (max-width: 420px) {
   .site-header .nav nav { display: flex; }
 }
+
+/* Committed Mainnet transaction evidence */
+.landing-transactions { padding-top: 44px; }
+.transaction-ledger-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 32px;
+  margin-top: 72px;
+  padding: 24px 28px;
+  border: 1px solid rgba(180, 248, 200, .2);
+  border-radius: 20px;
+  background: linear-gradient(120deg, rgba(180, 248, 200, .055), rgba(8, 10, 14, .76));
+}
+.transaction-ledger-summary > div { display: flex; align-items: baseline; gap: 18px; }
+.transaction-ledger-summary span { color: #77818d; font: 9px/1 ui-monospace, monospace; letter-spacing: .12em; }
+.transaction-ledger-summary strong { color: var(--private); font-size: 34px; font-weight: 500; }
+.transaction-ledger-summary > p { display: flex; align-items: center; gap: 9px; margin: 0; font: 10px/1.4 ui-monospace, monospace; letter-spacing: .08em; text-transform: uppercase; }
+.transaction-ledger-summary > p i,
+.transaction-ledger-item > ul i { width: 7px; height: 7px; border-radius: 50%; background: currentColor; box-shadow: 0 0 10px currentColor; }
+.transaction-ledger-list { display: grid; gap: 14px; margin: 18px 0 0; padding: 0; list-style: none; }
+.transaction-ledger-item { border: 1px solid var(--hairline); border-radius: 20px; overflow: hidden; background: rgba(8, 10, 14, .75); }
+.transaction-ledger-item > header { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 20px; padding: 22px 24px; border-bottom: 1px solid var(--hairline); }
+.transaction-ledger-item > header > span { color: #697582; font: 10px/1 ui-monospace, monospace; }
+.transaction-ledger-item > header p { margin: 0 0 7px; color: var(--bone); font-size: 14px; font-weight: 500; }
+.transaction-ledger-item code { color: var(--private); font: 11px/1.4 ui-monospace, monospace; }
+.transaction-ledger-links { display: flex; gap: 10px; }
+.transaction-ledger-links a,
+.transaction-ledger-source a { border-bottom: 1px solid rgba(180, 248, 200, .24); color: var(--private); font-size: 11px; transition: border-color .2s ease, color .2s ease; }
+.transaction-ledger-links a:hover,
+.transaction-ledger-source a:hover { border-color: currentColor; color: var(--bone); }
+.transaction-ledger-item > dl { display: grid; grid-template-columns: .7fr .7fr 1.5fr .8fr; margin: 0; padding: 20px 24px; }
+.transaction-ledger-item > dl > div { min-width: 0; padding-right: 18px; }
+.transaction-ledger-item dt { margin-bottom: 8px; color: #697582; font: 8px/1 ui-monospace, monospace; letter-spacing: .1em; text-transform: uppercase; }
+.transaction-ledger-item dd { margin: 0; overflow-wrap: anywhere; color: #b7c0ca; font: 10px/1.5 ui-monospace, monospace; }
+.transaction-ledger-item > ul { display: flex; flex-wrap: wrap; gap: 10px 22px; margin: 0; padding: 15px 24px; border-top: 1px solid var(--hairline); color: var(--private); list-style: none; }
+.transaction-ledger-item > ul li { display: flex; align-items: center; gap: 8px; font: 9px/1.4 ui-monospace, monospace; }
+.transaction-ledger-item > ul i { flex: 0 0 auto; width: 5px; height: 5px; }
+.transaction-ledger-source { margin: 20px 0 0; color: var(--landing-muted); font-size: 11px; text-align: right; }
+
+@media (max-width: 700px) {
+  .landing-transactions { padding-top: 20px; }
+  .transaction-ledger-summary { align-items: flex-start; flex-direction: column; margin-top: 52px; padding: 22px; }
+  .transaction-ledger-item > header { grid-template-columns: auto 1fr; padding: 20px; }
+  .transaction-ledger-links { grid-column: 2; flex-wrap: wrap; }
+  .transaction-ledger-item > dl { grid-template-columns: 1fr 1fr; gap: 20px 14px; padding: 20px; }
+  .transaction-ledger-item > ul { align-items: flex-start; flex-direction: column; padding: 16px 20px; }
+  .transaction-ledger-source { text-align: left; }
+}
+
+@media (max-width: 420px) {
+  .transaction-ledger-summary > div { width: 100%; justify-content: space-between; }
+  .transaction-ledger-item code { font-size: 10px; }
+  .transaction-ledger-links { grid-column: 1 / -1; }
+}

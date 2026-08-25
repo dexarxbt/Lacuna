@@ -10,6 +10,7 @@
     "test": "node --experimental-strip-types --test test/*.test.ts"
   },
   "dependencies": {
+    "@lacuna/evidence-model": "0.1.0",
     "@lacuna/recipe-engine": "0.1.0",
     "@lacuna/wallet-bridge": "0.1.0",
     "react": "19.2.8",

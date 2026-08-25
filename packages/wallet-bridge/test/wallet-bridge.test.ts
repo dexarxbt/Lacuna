@@ -104,12 +104,28 @@ test('submission is blocked until every review gate is confirmed', async () => {
   assert.equal(result.transaction_hash, '0xabc')
 })
 
-test('invalid actions fail before reaching a wallet', async () => {
-  const actions: Strk20Action[] = [
-    { type: 'invoke', contract: '0x1', calldata: [] },
+test('private invoke is rejected before prepare or submit reaches the wallet', async () => {
+  const invoke: Strk20Action[] = [{ type: 'invoke', contract: '0x1', calldata: [] }]
+  const doubleInvoke: Strk20Action[] = [
+    ...invoke,
     { type: 'invoke', contract: '0x2', calldata: [] },
   ]
-  assert.match(validateActions(actions).join(' '), /only one external invoke/)
+  let requestCount = 0
+  const wallet = mockWallet(() => {
+    requestCount += 1
+    throw new Error('Wallet must not be reached.')
+  })
+  const consent = {
+    networkConfirmed: true as const,
+    disclosuresConfirmed: true as const,
+    feeConfirmed: true as const,
+  }
+
+  assert.match(validateActions(invoke).join(' '), /Arbitrary private invoke is unavailable/)
+  assert.match(validateActions(doubleInvoke).join(' '), /only one external invoke/)
+  await assert.rejects(prepareInvoke(wallet, invoke), /Arbitrary private invoke is unavailable/)
+  await assert.rejects(submitInvoke(wallet, invoke, consent), /Arbitrary private invoke is unavailable/)
+  assert.equal(requestCount, 0)
 })
 
 test('keeps unknown probe failures indeterminate and visible', async () => {
@@ -422,4 +438,86 @@ test('keeps a generic internal server error inconclusive on its own', async () =
   assert.equal(report.strk20Status, 'indeterminate')
   assert.equal(report.registered, null)
   assert.deepEqual(report.issues, ['strk20-check-failed'])
+})
+
+
+test('redacts proof material from validated simulation results', async () => {
+  const wallet = mockWallet(() => ({
+    call: { contract_address: '0x1', entry_point: 'execute', calldata: ['0x1', '2'] },
+    proof: { data: 'secret-proof-data', output: ['secret-output'], proof_facts: ['secret-fact'] },
+  }))
+
+  const result = await prepareInvoke(wallet, transfer)
+  assert.deepEqual(result, {
+    simulated: true,
+    call: { contractAddress: '0x1', entryPoint: 'execute', calldataLength: 2 },
+  })
+  assert.equal(JSON.stringify(result).includes('secret'), false)
+})
+
+test('rejects malformed prepare and submit responses', async () => {
+  await assert.rejects(
+    prepareInvoke(mockWallet(() => ({ call: {}, proof: {} })), transfer),
+    /malformed STRK20 simulation response/,
+  )
+  await assert.rejects(
+    submitInvoke(mockWallet(() => ({ transaction_hash: 'not-a-hash' })), transfer, {
+      networkConfirmed: true,
+      disclosuresConfirmed: true,
+      feeConfirmed: true,
+    }),
+    /invalid Starknet transaction hash/,
+  )
+})
+
+test('bounds action count, calldata, and felt values before wallet access', () => {
+  const tooMany = Array.from({ length: 9 }, () => transfer[0])
+  assert.match(validateActions(tooMany).join(' '), /at most 8 actions/)
+
+  const oversizedFelt = '0x800000000000011000000000000000000000000000000000000000000000001'
+  assert.match(
+    validateActions([{ type: 'transfer', token, amount: oversizedFelt, recipient }]).join(' '),
+    /positive felt amount/,
+  )
+  assert.match(
+    validateActions([{ type: 'invoke', contract: '0x1', calldata: [oversizedFelt] }]).join(' '),
+    /must be a Starknet felt/,
+  )
+})
+
+
+test('rejects mixed or malformed account responses without claiming registration', async () => {
+  for (const accounts of [[42, '0xabc'], ['not-an-address']]) {
+    const wallet = mockWallet((call) => {
+      if (call.type === 'wallet_requestAccounts') return accounts
+      if (call.type === 'wallet_requestChainId') return 'SN_MAIN'
+      if (call.type === 'wallet_supportedWalletApi') return ['0.10.3']
+      if (call.type === 'wallet_strk20Balances') return [{ token, balance: '10' }]
+      return []
+    })
+
+    const report = await probeWallet(wallet)
+    assert.equal(report.account, null)
+    assert.equal(report.registered, null)
+    assert.ok(report.issues.includes('no-account'))
+    assert.match(report.detail, /Account access failed/)
+  }
+})
+
+
+test('does not infer API compatibility from malformed version metadata', async () => {
+  const wallet = mockWallet((call) => {
+    if (call.type === 'wallet_requestAccounts') return ['0xabc']
+    if (call.type === 'wallet_requestChainId') return 'SN_MAIN'
+    if (call.type === 'wallet_supportedWalletApi') return ['0.10.3-preview']
+    if (call.type === 'wallet_strk20Balances') return [{ token, balance: '10' }]
+    return []
+  })
+
+  const report = await probeWallet(wallet)
+  assert.equal(report.strk20Status, 'supported')
+  assert.equal(report.meetsRequiredApi, false)
+  assert.equal(report.apiVersionStatus, 'unreported')
+  assert.ok(report.issues.includes('api-unreported'))
+  assert.match(report.detail, /invalid response/)
 })

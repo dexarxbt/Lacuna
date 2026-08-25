@@ -1,7 +1,7 @@
 {
   "evidence": [
     {
-      "version": 1,
+      "version": 2,
       "transactionHash": "0x02e9918193a344303b170839bc1ab5737758e8306887cfb12c899ea2c481f720",
       "chainId": "SN_MAIN",
       "poolAddress": "0x040337b1af3c663e86e333bab5a4b28da8d4652a15a69beee2b677776ffe812a",
@@ -13,6 +13,11 @@
       "blockNumber": 13786473,
       "verifiedAt": "2026-08-24T11:06:23.114Z",
       "checks": [
+        {
+          "name": "receipt-hash-matches",
+          "passed": true,
+          "detail": "Receipt transaction hash matches the requested hash."
+        },
         {
           "name": "receipt-succeeded",
           "passed": true,
@@ -32,7 +37,7 @@
       "explorerUrl": "https://voyager.online/tx/0x02e9918193a344303b170839bc1ab5737758e8306887cfb12c899ea2c481f720"
     },
     {
-      "version": 1,
+      "version": 2,
       "transactionHash": "0x05f6231da1b66f28964af7ac872ea85a3b1310516c90cc10cf2b9f57c011a0cd",
       "chainId": "SN_MAIN",
       "poolAddress": "0x040337b1af3c663e86e333bab5a4b28da8d4652a15a69beee2b677776ffe812a",
@@ -44,6 +49,11 @@
       "blockNumber": 13788410,
       "verifiedAt": "2026-08-24T11:06:23.114Z",
       "checks": [
+        {
+          "name": "receipt-hash-matches",
+          "passed": true,
+          "detail": "Receipt transaction hash matches the requested hash."
+        },
         {
           "name": "receipt-succeeded",
           "passed": true,
@@ -63,7 +73,7 @@
       "explorerUrl": "https://voyager.online/tx/0x05f6231da1b66f28964af7ac872ea85a3b1310516c90cc10cf2b9f57c011a0cd"
     },
     {
-      "version": 1,
+      "version": 2,
       "transactionHash": "0x036e91f666a49e95c7b125a9d711eaf425c4bd1a1c8fcad98a503d83dbaf8da3",
       "chainId": "SN_MAIN",
       "poolAddress": "0x040337b1af3c663e86e333bab5a4b28da8d4652a15a69beee2b677776ffe812a",
@@ -75,6 +85,11 @@
       "blockNumber": 13788382,
       "verifiedAt": "2026-08-24T11:06:23.114Z",
       "checks": [
+        {
+          "name": "receipt-hash-matches",
+          "passed": true,
+          "detail": "Receipt transaction hash matches the requested hash."
+        },
         {
           "name": "receipt-succeeded",
           "passed": true,

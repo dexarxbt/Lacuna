@@ -45,6 +45,7 @@ export type Diagnostic = {
     | 'note-not-mature'
     | 'orphan-maturity-wait'
     | 'multiple-external-invokes'
+    | 'unsupported-private-invoke'
     | 'nothing-to-verify'
   severity: DiagnosticSeverity
   stepId: string
@@ -218,6 +219,12 @@ export function analyzeRecipe(recipe: Recipe, context: AnalysisContext): RecipeA
     }
 
     if (step.kind === 'privateInvoke') {
+      stepDiagnostics.push(diagnostic(
+        'unsupported-private-invoke',
+        'error',
+        step.id,
+        'Arbitrary private invoke is unavailable without a trusted helper allowlist, code-hash policy, and deterministic calldata encoder.',
+      ))
       if (!hasPrivateBalance) {
         stepDiagnostics.push(diagnostic('missing-private-balance', 'error', step.id, 'Shield assets before invoking a private action.'))
       } else if (!noteMature) {

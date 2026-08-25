@@ -55,6 +55,18 @@ test('a transaction group cannot contain two external invokes', () => {
   assert.ok(result.diagnostics.some(({ code }) => code === 'multiple-external-invokes'))
 })
 
+test('private invoke remains unavailable even when generic wallet methods are proven', () => {
+  const recipe = recipes.find(({ id }) => id === 'private-invoke')
+  assert.ok(recipe)
+
+  const result = analyzeRecipe(recipe, { capabilities: [...allCapabilities] })
+
+  assert.equal(result.isExecutable, false)
+  assert.ok(result.diagnostics.some(({ code, severity }) => (
+    code === 'unsupported-private-invoke' && severity === 'error'
+  )))
+})
+
 test('missing wallet methods produce actionable errors', () => {
   const result = analyzeRecipe(recipes[0], { capabilities: [] })
 

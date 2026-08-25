@@ -1,22 +1,25 @@
 # Wallet compatibility
 
-Lacuna does not maintain a hard-coded list of “supported” wallet brands. STRK20 support lives in a wallet's runtime Wallet API implementation and can change independently of its name.
+Lacuna does not hard-code “supported” wallet brands. Runtime method evidence is authoritative because Wallet API support can change independently of a wallet name or advertised version.
 
-## Required interface
+## Required execution conditions
 
-A wallet is ready for Lacuna execution when it:
+A wallet can execute Lacuna's transfer/withdraw path only when it:
 
-1. exposes a Starknet injected provider;
+1. exposes an injected Starknet provider;
 2. grants an account through `wallet_requestAccounts`;
 3. reports `SN_MAIN` through `wallet_requestChainId`;
-4. supports Wallet API `0.10.3` or newer;
-5. answers `wallet_strk20Balances`;
-6. supports `wallet_strk20PrepareInvoke` and `wallet_strk20InvokeTransaction` for the intended flow;
-7. has a registered STRK20 account and sufficient mature private balance.
+4. proves Wallet API `0.10.3` compatibility;
+5. answers `wallet_strk20Balances` with a valid array or structured `NOT_REGISTERED` result;
+6. has a registered selected account and sufficient wallet-reported private balance;
+7. successfully handles the exact `wallet_strk20PrepareInvoke` simulation;
+8. receives explicit user consent and wallet approval before `wallet_strk20InvokeTransaction`.
 
-## Capability doctor
+The first six conditions permit constructing a simulation request. A successful read does not imply prepare or submit support.
 
-The studio's capability doctor runs only after the user clicks **Check wallet** and chooses an injected wallet. The probe is transaction-read-only, not privacy-neutral: after wallet approval, the page receives the wallet identity, account, network, API versions, and returned STRK20 token identifiers and shielded balances. It displays the account and asset count, keeps the result in page memory only, and has no backend or analytics destination for that state. It performs:
+## Wallet Doctor
+
+The Doctor starts only after the user clicks **Check wallet** and chooses an injected provider. It calls:
 
 ```text
 wallet_requestAccounts
@@ -25,21 +28,57 @@ wallet_supportedWalletApi
 wallet_strk20Balances({ tokens: [], api_version: "0.10.3" })
 ```
 
-Error code `118` (`NOT_REGISTERED`) proves that the STRK20 method exists, but it does not by itself prove Wallet API `0.10.3` compatibility; the UI reports registration and version status independently. A valid successful balance response can infer compatibility with the requested `0.10.3` only when the separate version lookup advertises no versions. Explicit older-version metadata or error `162` remains blocking.
+It is read-only with respect to transactions, not privacy-neutral. After wallet approval, the page receives wallet identity, account, network, reported API versions, token identifiers, and private balance values. Wallet Doctor shows the account and number of wallet-reported token entries. The execution selector displays shortened token identifiers and exact wallet-reported private balances, which remain local but are visible on screen and can appear in screenshots or recordings. This state remains in page memory and has no Lacuna backend or analytics destination.
 
-The doctor distinguishes three STRK20 outcomes:
+## Method evidence matrix
 
-- **Supported**: the balance method returns a valid array or reports `NOT_REGISTERED`.
-- **Unsupported**: the provider explicitly reports that the method is missing or unsupported.
-- **Check incomplete**: the provider rejects the probe for another reason, returns malformed data, or cannot report enough information.
+| Method | When Lacuna marks it proven | What does not prove it |
+|---|---|---|
+| `wallet_strk20Balances` | Valid balance array, or structured code `118` (`NOT_REGISTERED`) | Wallet brand, API version alone, malformed response, generic failure |
+| `wallet_strk20PrepareInvoke` | A successful user-requested `simulate: true` call with a strictly valid response | Balance support, function presence, advertised API version |
+| `wallet_strk20InvokeTransaction` | A consented call returns a valid Starknet transaction hash | Prepare success, a harmless feature probe, inferred support |
 
-Missing version metadata alone is reported as **not reported**, not **too old**. The completed report preserves the wallet's probe error and numeric code when available so a locked wallet, user refusal, implementation error, and missing method are not presented as the same result. Conflicting actionable error evidence remains inconclusive. A generic JSON-RPC internal-server wrapper is diagnostic-only and does not erase a nested or outer structured code `118`; free-form `NOT_REGISTERED` text without code `118` is never trusted. No inconclusive response unlocks execution or claims compatibility.
+The UI uses **proven**, **unavailable**, **inconclusive**, and **not tested** deliberately. “Not tested” is not presented as unsupported.
 
-## Safety behavior
+## API-version semantics
 
-- Discovery and probing never prepare, prove, sign, or submit a transaction.
-- Lacuna does not read viewing keys or raw notes.
-- The studio currently keeps execution locked even when all capability checks pass.
-- A future execution screen must simulate first and require network, disclosure, and fee confirmation.
+The required version and wallet-reported versions are shown separately.
 
-The official sprint guidance recommends Ready or Braavos for manual mainnet onboarding, but it also states that Wallet API support must be probed rather than assumed. The runtime report is authoritative for Lacuna.
+- An advertised version at or above `0.10.3` proves the version requirement.
+- A valid successful balance response may infer compatibility with the requested `0.10.3` only when version lookup reports no versions.
+- Structured code `118` proves the balance method exists but does not infer an unreported API version.
+- Explicit old-version metadata or code `162` remains blocking.
+- Missing metadata is **not reported**, not automatically **too old**.
+
+## Error classification
+
+- **Proven**: the relevant call returned a valid response, or the balance call returned structured code `118`.
+- **Unavailable**: the provider explicitly reports that the method is missing or unsupported.
+- **Inconclusive**: the provider fails for another reason, returns malformed data, or provides conflicting structured evidence.
+
+A generic JSON-RPC wrapper does not erase a specific nested code. Free-form `NOT_REGISTERED` text without code `118` is never trusted. Conflicting actionable codes remain inconclusive. Numeric codes and diagnostic messages are retained when available.
+
+## Simulation and submission safety
+
+Before each simulation Lacuna re-runs account, chain, API, and balance checks. The user selects only a token returned by the wallet, enters a raw base-unit amount, and supplies a Starknet recipient/destination. The immutable snapshot is invalidated by any input or identity change.
+
+Prepare responses are strictly parsed. Proof structure is validated at the bridge boundary but proof data is discarded; the UI receives only redacted call metadata.
+
+Before submission, Lacuna repeats the account, chain, API, registration, token, and balance preflight and requires it to derive the same frozen fingerprint.
+
+Submission requires:
+
+- the exact simulated snapshot;
+- the same wallet, account, and Mainnet network;
+- explicit network confirmation;
+- explicit disclosure confirmation;
+- confirmation that the final fee will be reviewed in the wallet;
+- final wallet approval.
+
+Lacuna makes one submission request and never automatically retries it. A returned hash means submitted, not verified.
+
+## Non-support
+
+Arbitrary private invoke is intentionally unavailable. The repository has no trusted helper contract address, code-hash allowlist, ABI, or deterministic calldata encoder. Raw contract/calldata fields are not exposed.
+
+The official sprint guidance names wallets for onboarding, but Lacuna still probes runtime behavior rather than assuming method support.

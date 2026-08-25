@@ -15,7 +15,7 @@ Lacuna explains STRK20 privacy; it does not enlarge the protocol's anonymity set
 
 ## Capability-doctor disclosure
 
-The capability doctor is read-only with respect to transactions, but it is not privacy-neutral. After explicit user approval, the page receives the selected wallet identity, account address, network, reported Wallet API versions, and STRK20 token identifiers and shielded balances. The interface displays the account and an asset count and retains the probe result only in page memory until refresh or navigation. Lacuna has no backend or analytics pipeline, so it does not transmit this state to an application server; the injected wallet and its own infrastructure remain outside Lacuna's control.
+The capability doctor is read-only with respect to transactions, but it is not privacy-neutral. After explicit user approval, the page receives the selected wallet identity, account address, network, reported Wallet API versions, and STRK20 token identifiers and private balance values. Wallet Doctor summarizes the account and wallet-reported token-entry count; the execution selector displays shortened token identifiers and exact wallet-reported private balances. These values remain local to page memory, but they are visible on screen and may be captured in screenshots or recordings until refresh or navigation. Lacuna has no backend or analytics pipeline, so it does not transmit this state to an application server; the injected wallet and its own infrastructure remain outside Lacuna's control.
 
 ## What Lacuna guarantees
 
@@ -23,8 +23,9 @@ The capability doctor is read-only with respect to transactions, but it is not p
 - Invalid graph conditions are surfaced before a wallet request.
 - A private transaction cannot contain more than one external invoke.
 - Wallet support is checked using a balances method that is transaction-read-only but exposes the returned wallet state to the page.
-- Simulated preparation does not return a submittable proof.
-- The submitting adapter refuses execution without explicit network, disclosure, and fee confirmation.
+- Simulated preparation is strictly parsed; proof material is discarded before the UI receives redacted call metadata.
+- Submission accepts only the unchanged simulated transfer/withdraw snapshot and refuses execution without explicit network, disclosure, and wallet-fee confirmation.
+- A transaction hash is labeled submitted until independent public receipt checks pass.
 - Evidence records enter the verified index only after public receipt checks pass.
 
 ## What Lacuna does not guarantee
@@ -34,8 +35,9 @@ The capability doctor is read-only with respect to transactions, but it is not p
 - That timing, amounts, browser metadata, RPC traffic, or off-chain behavior cannot be correlated.
 - That shielding or withdrawal is private; both have public ERC-20 legs.
 - That private DeFi hides amount or timing.
-- That a transaction will be accepted, affordable, or mature when requested.
-- That the current studio can submit transactions. Execution stays locked until action inputs, simulation, fee review, and recovery states are complete.
+- That a wallet simulation will submit successfully, that a submitted transaction will be accepted, or that fees remain affordable.
+- That recipient registration or note maturity is valid until the wallet/protocol checks it.
+- That arbitrary private contract invoke is supported; no trusted helper allowlist or calldata encoder is configured.
 
 ## Secret handling
 

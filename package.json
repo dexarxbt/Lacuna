@@ -9,13 +9,13 @@
   ],
   "scripts": {
     "dev": "npm run dev --workspace @lacuna/web",
-    "build": "npm run build --workspace @lacuna/web",
+    "build": "npm run check:manifest && npm run build --workspace @lacuna/web",
     "lacuna": "node --experimental-strip-types apps/cli/src/index.ts",
     "check:manifest": "npm run lacuna -- check-manifest",
     "verify:mainnet": "npm run lacuna -- verify-mainnet",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
-    "verify": "npm run typecheck && npm test && npm run check:manifest && npm run build"
+    "verify": "npm run typecheck && npm test && npm run build"
   },
   "engines": {
     "node": ">=22.12.0",

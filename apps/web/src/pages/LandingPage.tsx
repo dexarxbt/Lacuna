@@ -1,6 +1,12 @@
 import { useEffect } from 'react'
 import { BoundaryArtwork } from '../components/BoundaryArtwork'
+import { EvidenceLedger } from '../components/EvidenceLedger'
+import { evidenceSummary } from '../evidence'
 import './landing.css'
+
+const evidenceThreshold = evidenceSummary.minimumMet ? 'MINIMUM MET' : 'MINIMUM PENDING'
+const evidenceStatus = `${evidenceSummary.verifiedCount} VERIFIED · ${evidenceThreshold}`
+const evidenceDetail = `${evidenceSummary.verifiedCount} accepted Mainnet pool receipts are committed in the public evidence index.`
 
 const checkpoints = [
   {
@@ -29,21 +35,21 @@ const checkpoints = [
   },
   {
     name: 'Simulate',
-    status: 'IMPLEMENTED · GATED',
+    status: 'IMPLEMENTED · USER-INITIATED',
     tone: 'gated',
-    detail: 'Preparation exists in code but stays hidden until real inputs are complete.',
+    detail: 'Re-probe the selected wallet, validate exact transfer or withdrawal inputs, then request a non-submittable simulation.',
   },
   {
     name: 'Review',
-    status: 'CONSENT-GATED · LOCKED',
-    tone: 'locked',
-    detail: 'Transaction submission remains intentionally unavailable in the studio.',
+    status: 'CONSENT-GATED · WALLET APPROVAL',
+    tone: 'gated',
+    detail: 'Submission requires an unchanged simulation, three explicit acknowledgements, and final approval in the wallet.',
   },
   {
     name: 'Verify',
-    status: 'IMPLEMENTED · 3 RECEIPTS',
+    status: `IMPLEMENTED · ${evidenceStatus}`,
     tone: 'ready',
-    detail: 'Verify accepted receipts and export public evidence; three Mainnet pool interactions are committed.',
+    detail: `Verify accepted receipts and export public evidence; ${evidenceDetail}`,
   },
 ] as const
 
@@ -74,21 +80,21 @@ const capabilities = [
   },
   {
     capability: 'Simulated preparation adapter',
-    status: 'IMPLEMENTED · GATED',
+    status: 'IMPLEMENTED · USER-INITIATED',
     tone: 'gated',
-    detail: 'The adapter is not exposed while action inputs are placeholders.',
+    detail: 'Validated private transfers and withdrawals can be simulated after a fresh wallet, account, network, and balance probe.',
   },
   {
     capability: 'Submission adapter',
-    status: 'CONSENT-GATED · LOCKED',
-    tone: 'locked',
-    detail: 'No transaction can be prepared, signed, or submitted from this build.',
+    status: 'CONSENT-GATED · MAINNET',
+    tone: 'gated',
+    detail: 'Only the frozen simulated action can be submitted, once, after three review gates and explicit wallet approval; arbitrary invoke is not exposed.',
   },
   {
     capability: 'Mainnet receipt evidence',
-    status: '3 / 3 ACCEPTED · COMMITTED',
+    status: evidenceStatus,
     tone: 'ready',
-    detail: 'Three accepted Mainnet receipts are committed in the public evidence index.',
+    detail: evidenceDetail,
   },
 ] as const
 
@@ -136,8 +142,8 @@ export function LandingPage() {
           </h1>
           <p className="landing-hero-copy">
             Inspect supported STRK20 recipes, disclosure boundaries, protocol constraints,
-            and wallet capabilities before signing. Execution stays locked in the studio;
-            three accepted Mainnet pool receipts are verified and committed.
+            and wallet capabilities before signing. Accepted Mainnet pool receipts are
+            validated, committed, and published in an append-only evidence ledger.
           </p>
           <div className="landing-actions">
             <a className="button primary" href="/studio">Launch studio <span aria-hidden="true">↗</span></a>
@@ -151,8 +157,8 @@ export function LandingPage() {
         <div className="wrap landing-status-grid">
           <div><span>TARGET</span><strong>Starknet Mainnet</strong></div>
           <div><span>PROTOCOL</span><strong>STRK20</strong></div>
-          <div><span>STUDIO</span><strong className="status-locked">Execution locked</strong></div>
-          <div><span>EVIDENCE</span><strong className="status-ready">3 / 3 Mainnet receipts committed</strong></div>
+          <div><span>STUDIO</span><strong className="status-ready">Simulate · review · approve</strong></div>
+          <div><span>TRANSACTIONS</span><strong className="status-ready">{evidenceSummary.verifiedCount} verified · {evidenceThreshold.toLowerCase()}</strong></div>
         </div>
       </section>
 
@@ -183,7 +189,7 @@ export function LandingPage() {
             <div className="landing-problem-visual evidence-visual" aria-hidden="true"><i /><i /><i /></div>
             <p className="landing-card-index">03 / EVIDENCE</p>
             <h3>Implemented is not accepted</h3>
-            <p>Receipt verification now anchors three accepted Mainnet pool interactions in public evidence.</p>
+            <p>Receipt verification anchors {evidenceSummary.verifiedCount} accepted Mainnet pool interactions in public evidence.</p>
           </article>
         </div>
       </section>
@@ -221,7 +227,7 @@ export function LandingPage() {
           <h2 id="status-title">Implemented, gated, or still a gap</h2>
           <p>
             This ledger mirrors Lacuna’s current build status. It distinguishes working
-            code from studio exposure and accepted mainnet evidence.
+            code from studio exposure and accepted Mainnet evidence.
           </p>
         </div>
         <div className="landing-ledger-table landing-reveal" role="table" aria-label="Lacuna capability status">
@@ -243,6 +249,8 @@ export function LandingPage() {
         </div>
       </section>
 
+      <EvidenceLedger />
+
       <section className="landing-final" aria-labelledby="final-title">
         <div className="landing-final-grid" aria-hidden="true" />
         <div className="landing-final-orbit" aria-hidden="true"><i /><i /><i /></div>
@@ -250,12 +258,12 @@ export function LandingPage() {
           <p className="landing-kicker">THE LACUNA IS VISIBLE</p>
           <h2 id="final-title">Build private flows<br /><span>Know what leaks</span></h2>
           <p>
-            Open the studio to inspect a supported STRK20 recipe. The current build does
-            not prepare or sign transactions.
+            Open the studio to inspect a supported STRK20 recipe, then review the public
+            receipts that back Lacuna’s Mainnet evidence claims.
           </p>
           <div className="landing-actions">
             <a className="button primary" href="/studio">Launch studio <span aria-hidden="true">↗</span></a>
-            <a className="button secondary" href="#status">Read the status ledger</a>
+            <a className="button secondary" href="#transactions">Review transactions</a>
           </div>
         </div>
       </section>

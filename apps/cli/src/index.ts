@@ -1,19 +1,24 @@
 #!/usr/bin/env node
 
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
+import { isDeepStrictEqual } from 'node:util'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import {
+  canonicalStarknetFelt,
   isTransactionHash,
   isVerified,
-  parseTransactionEvidence,
+  parseEvidenceIndex,
   STARKNET_MAINNET_CHAIN_ID,
-  STRK20_MAINNET_POOL,
   validateSubmissionManifest,
+  verifyReceiptValue,
+  type ReceiptVerification,
   type SubmissionManifest,
   type TransactionEvidence,
-  type VerificationCheck,
 } from '@lacuna/evidence-model'
+
+export { verifyReceiptValue } from '@lacuna/evidence-model'
+export type { ReceiptVerification } from '@lacuna/evidence-model'
 
 export const DEFAULT_RPC_URL = 'https://rpc.starknet.lava.build'
 
@@ -21,19 +26,24 @@ type JsonRecord = Record<string, unknown>
 
 export type RpcTransport = (method: string, params?: unknown) => Promise<unknown>
 
-export type ReceiptVerification = {
-  evidence: TransactionEvidence
-  receipt: JsonRecord
-  errors: string[]
-}
-
 function isRecord(value: unknown): value is JsonRecord {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function uniqueStrings(value: unknown): string[] | null {
+function stringArray(value: unknown): string[] | null {
   if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) return null
-  return [...new Set(value as string[])]
+  return value as string[]
+}
+
+function canonicalSet(values: string[]): Set<string> {
+  return new Set(values.flatMap((value) => {
+    const canonical = canonicalStarknetFelt(value)
+    return canonical ? [canonical] : []
+  }))
+}
+
+function hasCanonicalDuplicates(values: string[]): boolean {
+  return canonicalSet(values).size !== values.length
 }
 
 export function parseSubmissionManifest(value: unknown, requireComplete = false): {
@@ -43,16 +53,16 @@ export function parseSubmissionManifest(value: unknown, requireComplete = false)
   if (!isRecord(value)) return { manifest: null, errors: ['strk20.json must contain a JSON object.'] }
 
   const errors: string[] = []
-  const transactions = uniqueStrings(value.transactions)
-  const contracts = value.contracts === undefined ? undefined : uniqueStrings(value.contracts)
+  const transactions = stringArray(value.transactions)
+  const contracts = value.contracts === undefined ? undefined : stringArray(value.contracts)
 
   if (transactions === null) errors.push('transactions must be an array of strings.')
   if (value.contracts !== undefined && contracts === null) errors.push('contracts must be an array of strings when present.')
-  if (Array.isArray(value.transactions) && new Set(value.transactions).size !== value.transactions.length) {
-    errors.push('transactions must not contain duplicates.')
+  if (transactions && transactions.every(isTransactionHash) && hasCanonicalDuplicates(transactions)) {
+    errors.push('transactions must not contain felt-equivalent duplicates.')
   }
-  if (Array.isArray(value.contracts) && new Set(value.contracts).size !== value.contracts.length) {
-    errors.push('contracts must not contain duplicates.')
+  if (contracts && contracts.every(isTransactionHash) && hasCanonicalDuplicates(contracts)) {
+    errors.push('contracts must not contain felt-equivalent duplicates.')
   }
 
   const demoVideo = value.demo_video
@@ -82,53 +92,109 @@ export function parseSubmissionManifest(value: unknown, requireComplete = false)
 export function validateManifestEvidence(
   manifest: SubmissionManifest,
   value: unknown,
+  requireExact = true,
 ): string[] {
-  if (!isRecord(value) || !Array.isArray(value.evidence)) {
-    return ['verification/mainnet/transaction-index.json must contain an evidence array.']
-  }
+  const parsed = parseEvidenceIndex(value)
+  if (!parsed.ok) return parsed.errors.map((error) => `verification/mainnet/transaction-index.json: ${error}`)
 
   const errors: string[] = []
-  const records: TransactionEvidence[] = []
-  for (const [index, candidate] of value.evidence.entries()) {
-    const parsed = parseTransactionEvidence(candidate)
-    if (!parsed.ok) {
-      errors.push(...parsed.errors.map((error) => `Evidence record ${index + 1}: ${error}`))
-      continue
-    }
-    if (!isVerified(parsed.evidence)) {
-      errors.push(`Evidence record ${index + 1} has not passed every required check.`)
-    }
-    records.push(parsed.evidence)
-  }
+  const manifestSet = canonicalSet(manifest.transactions)
+  const evidenceSet = canonicalSet(parsed.evidence.map(({ transactionHash }) => transactionHash))
 
-  const manifestHashes = manifest.transactions.map((hash) => hash.toLowerCase())
-  const evidenceHashes = records.map(({ transactionHash }) => transactionHash.toLowerCase())
-  if (new Set(evidenceHashes).size !== evidenceHashes.length) {
-    errors.push('Verified evidence must not contain duplicate transaction hashes.')
+  if (requireExact) {
+    for (const hash of manifest.transactions) {
+      const canonical = canonicalStarknetFelt(hash)
+      if (canonical && !evidenceSet.has(canonical)) {
+        errors.push(`Manifest transaction ${hash} has no committed verified evidence.`)
+      }
+    }
   }
-
-  const manifestSet = new Set(manifestHashes)
-  const evidenceSet = new Set(evidenceHashes)
-  for (const hash of manifestHashes) {
-    if (!evidenceSet.has(hash)) errors.push(`Manifest transaction ${hash} has no committed verified evidence.`)
-  }
-  for (const hash of evidenceHashes) {
-    if (!manifestSet.has(hash)) errors.push(`Committed evidence ${hash} is not listed in strk20.json.`)
+  for (const evidence of parsed.evidence) {
+    const canonical = canonicalStarknetFelt(evidence.transactionHash)
+    if (canonical && !manifestSet.has(canonical)) {
+      errors.push(`Committed evidence ${evidence.transactionHash} is not listed in strk20.json.`)
+    }
   }
 
   return errors
 }
 
+export async function validateCommittedReceiptArtifacts(
+  root: string,
+  indexValue: unknown,
+): Promise<string[]> {
+  const parsed = parseEvidenceIndex(indexValue)
+  if (!parsed.ok) return parsed.errors.map((error) => `verification/mainnet/transaction-index.json: ${error}`)
+
+  const receiptsDirectory = join(root, 'verification', 'mainnet', 'receipts')
+  const expectedFiles = new Set(parsed.evidence.map(({ transactionHash }) => `${transactionHash.toLowerCase()}.json`))
+  const errors: string[] = []
+  let receiptFiles: string[] = []
+  try {
+    receiptFiles = (await readdir(receiptsDirectory)).filter((name) => name.endsWith('.json'))
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+  }
+
+  for (const fileName of receiptFiles) {
+    if (!expectedFiles.has(fileName)) errors.push(`Unindexed raw receipt ${fileName} is present.`)
+  }
+
+  for (const evidence of parsed.evidence) {
+    const fileName = `${evidence.transactionHash.toLowerCase()}.json`
+    let receipt: unknown
+    try {
+      receipt = JSON.parse(await readFile(join(receiptsDirectory, fileName), 'utf8')) as unknown
+    } catch (error) {
+      const detail = (error as NodeJS.ErrnoException).code === 'ENOENT'
+        ? 'is missing'
+        : `is unreadable: ${error instanceof Error ? error.message : String(error)}`
+      errors.push(`Raw receipt ${fileName} ${detail}.`)
+      continue
+    }
+
+    let verification: ReceiptVerification
+    try {
+      verification = verifyReceiptValue(
+        evidence.transactionHash,
+        receipt,
+        evidence.verifiedAt,
+        evidence.operation,
+      )
+    } catch (error) {
+      errors.push(`Raw receipt ${fileName} is invalid: ${error instanceof Error ? error.message : String(error)}`)
+      continue
+    }
+    if (verification.errors.length > 0 || !isVerified(verification.evidence)) {
+      errors.push(`Raw receipt ${fileName} failed verification: ${verification.errors.join(' ')}`)
+      continue
+    }
+    if (!isDeepStrictEqual(verification.evidence, evidence)) {
+      errors.push(`Raw receipt ${fileName} does not derive the committed evidence record.`)
+    }
+  }
+
+  return errors
+}
+
+export const DEFAULT_RPC_TIMEOUT_MS = 10_000
+
 export function createRpcTransport(
   endpoint: string,
   fetchImplementation: typeof fetch = fetch,
+  timeoutMs = DEFAULT_RPC_TIMEOUT_MS,
 ): RpcTransport {
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) {
+    throw new Error('RPC timeout must be a positive integer in milliseconds.')
+  }
+
   let id = 0
   return async (method, params = {}) => {
     const response = await fetchImplementation(endpoint, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ jsonrpc: '2.0', id: ++id, method, params }),
+      signal: AbortSignal.timeout(timeoutMs),
     })
     if (!response.ok) throw new Error(`RPC returned HTTP ${response.status}.`)
     const payload: unknown = await response.json()
@@ -140,82 +206,13 @@ export function createRpcTransport(
   }
 }
 
-function sameFelt(left: unknown, right: string): boolean {
-  if (typeof left !== 'string') return false
-  try {
-    return BigInt(left) === BigInt(right)
-  } catch {
-    return false
-  }
-}
-
-function receiptEvents(receipt: JsonRecord): JsonRecord[] {
-  return Array.isArray(receipt.events) ? receipt.events.filter(isRecord) : []
-}
-
-function feeFromReceipt(receipt: JsonRecord): { amount: string; unit: string } {
-  const actualFee = isRecord(receipt.actual_fee) ? receipt.actual_fee : {}
-  const rawAmount = typeof actualFee.amount === 'string' ? actualFee.amount : '0'
-  let amount = rawAmount
-  try {
-    amount = BigInt(rawAmount).toString(10)
-  } catch {
-    amount = '0'
-  }
-  return { amount, unit: typeof actualFee.unit === 'string' ? actualFee.unit : 'UNKNOWN' }
-}
-
 export async function verifyTransactionReceipt(
   transactionHash: string,
   rpc: RpcTransport,
   verifiedAt = new Date().toISOString(),
 ): Promise<ReceiptVerification> {
-  if (!isTransactionHash(transactionHash)) throw new Error('Transaction hash is malformed.')
   const value = await rpc('starknet_getTransactionReceipt', { transaction_hash: transactionHash })
-  if (!isRecord(value)) throw new Error('Transaction receipt is malformed.')
-
-  const succeeded = value.execution_status === 'SUCCEEDED'
-  const confirmed = value.finality_status === 'ACCEPTED_ON_L1' || value.finality_status === 'ACCEPTED_ON_L2'
-  const touchedPool = receiptEvents(value).some((event) => sameFelt(event.from_address, STRK20_MAINNET_POOL))
-  const blockNumber = Number.isSafeInteger(value.block_number) ? Number(value.block_number) : -1
-  const checks: VerificationCheck[] = [
-    {
-      name: 'receipt-succeeded',
-      passed: succeeded,
-      detail: succeeded ? 'Execution status is SUCCEEDED.' : `Execution status is ${String(value.execution_status)}.`,
-    },
-    {
-      name: 'touched-pool',
-      passed: touchedPool,
-      detail: touchedPool ? 'Receipt includes an event from the verified STRK20 pool.' : 'No STRK20 pool event was found.',
-    },
-    {
-      name: 'block-confirmed',
-      passed: confirmed && blockNumber >= 0,
-      detail: confirmed && blockNumber >= 0
-        ? `${String(value.finality_status)} in block ${blockNumber}.`
-        : 'Receipt has not reached an accepted Starknet block.',
-    },
-  ]
-
-  const evidence: TransactionEvidence = {
-    version: 1,
-    transactionHash,
-    chainId: STARKNET_MAINNET_CHAIN_ID,
-    poolAddress: STRK20_MAINNET_POOL,
-    operation: 'unclassified-pool-interaction',
-    actualFee: feeFromReceipt(value),
-    blockNumber,
-    verifiedAt,
-    checks,
-    explorerUrl: `https://voyager.online/tx/${transactionHash}`,
-  }
-  const parsed = parseTransactionEvidence(evidence)
-  const errors = [
-    ...(parsed.ok ? [] : parsed.errors),
-    ...checks.filter(({ passed }) => !passed).map(({ detail }) => detail),
-  ]
-  return { evidence, receipt: value, errors }
+  return verifyReceiptValue(transactionHash, value, verifiedAt)
 }
 
 export async function verifyMainnetManifest(
@@ -232,6 +229,15 @@ export async function verifyMainnetManifest(
   )
 }
 
+async function readJsonIfPresent(filePath: string, fallback: unknown): Promise<unknown> {
+  try {
+    return JSON.parse(await readFile(filePath, 'utf8')) as unknown
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return fallback
+    throw error
+  }
+}
+
 export async function writeVerificationArtifacts(
   root: string,
   results: ReceiptVerification[],
@@ -241,34 +247,75 @@ export async function writeVerificationArtifacts(
     throw new Error(`Refusing to write failed verification result ${failed.evidence.transactionHash}.`)
   }
 
-  const hashes = results.map(({ evidence }) => evidence.transactionHash.toLowerCase())
-  if (new Set(hashes).size !== hashes.length) {
+  const batchHashes = results.map(({ evidence }) => canonicalStarknetFelt(evidence.transactionHash))
+  if (batchHashes.some((hash) => hash === null) || new Set(batchHashes).size !== batchHashes.length) {
     throw new Error('Refusing to write duplicate verification results.')
   }
 
   const directory = join(root, 'verification', 'mainnet')
   const receiptsDirectory = join(directory, 'receipts')
-  const nextReceiptsDirectory = join(directory, '.receipts-next')
   const indexPath = join(directory, 'transaction-index.json')
   const nextIndexPath = join(directory, '.transaction-index.next.json')
-  await mkdir(directory, { recursive: true })
-  await rm(nextReceiptsDirectory, { recursive: true, force: true })
-  await mkdir(nextReceiptsDirectory)
-
-  for (const result of results) {
-    const fileName = `${result.evidence.transactionHash.toLowerCase()}.json`
-    await writeFile(join(nextReceiptsDirectory, fileName), `${JSON.stringify(result.receipt, null, 2)}\n`, 'utf8')
+  const existingValue = await readJsonIfPresent(indexPath, { evidence: [] })
+  const existing = parseEvidenceIndex(existingValue)
+  if (!existing.ok) throw new Error(`Refusing to append to invalid committed evidence: ${existing.errors.join(' ')}`)
+  const artifactErrors = await validateCommittedReceiptArtifacts(root, existingValue)
+  if (artifactErrors.length > 0) {
+    throw new Error(`Refusing to append to invalid raw receipt artifacts: ${artifactErrors.join(' ')}`)
   }
-  await writeFile(
-    nextIndexPath,
-    `${JSON.stringify({ evidence: results.map(({ evidence }) => evidence) }, null, 2)}\n`,
-    'utf8',
-  )
 
-  await rm(receiptsDirectory, { recursive: true, force: true })
-  await rename(nextReceiptsDirectory, receiptsDirectory)
-  await rm(indexPath, { force: true })
-  await rename(nextIndexPath, indexPath)
+  const existingHashes = canonicalSet(existing.evidence.map(({ transactionHash }) => transactionHash))
+  const pendingResults = results.filter(({ evidence }) => {
+    const canonical = canonicalStarknetFelt(evidence.transactionHash)
+    return canonical !== null && !existingHashes.has(canonical)
+  })
+  if (pendingResults.length === 0) return
+
+  for (const result of pendingResults) {
+    let derived: ReceiptVerification
+    try {
+      derived = verifyReceiptValue(
+        result.evidence.transactionHash,
+        result.receipt,
+        result.evidence.verifiedAt,
+        result.evidence.operation,
+      )
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error)
+      throw new Error(`Refusing to publish malformed raw receipt ${result.evidence.transactionHash}: ${detail}`)
+    }
+    if (derived.errors.length > 0 || !isVerified(derived.evidence)) {
+      throw new Error(`Refusing to publish raw receipt that failed verification ${result.evidence.transactionHash}.`)
+    }
+    if (!isDeepStrictEqual(derived.evidence, result.evidence)) {
+      throw new Error(`Refusing to publish raw receipt that does not derive the proposed evidence ${result.evidence.transactionHash}.`)
+    }
+  }
+
+  const mergedEvidence = [...existing.evidence, ...pendingResults.map(({ evidence }) => evidence)]
+  const stagedIndex = parseEvidenceIndex({ evidence: mergedEvidence })
+  if (!stagedIndex.ok) {
+    throw new Error(`Refusing to write invalid merged evidence: ${stagedIndex.errors.join(' ')}`)
+  }
+
+  await mkdir(receiptsDirectory, { recursive: true })
+  await rm(nextIndexPath, { force: true })
+  const createdReceiptPaths: string[] = []
+  try {
+    for (const result of pendingResults) {
+      const fileName = `${result.evidence.transactionHash.toLowerCase()}.json`
+      const receiptPath = join(receiptsDirectory, fileName)
+      await writeFile(receiptPath, `${JSON.stringify(result.receipt, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' })
+      createdReceiptPaths.push(receiptPath)
+    }
+
+    await writeFile(nextIndexPath, `${JSON.stringify({ evidence: mergedEvidence }, null, 2)}\n`, 'utf8')
+    await rename(nextIndexPath, indexPath)
+  } catch (error) {
+    await rm(nextIndexPath, { force: true })
+    await Promise.all(createdReceiptPaths.map((receiptPath) => rm(receiptPath, { force: true })))
+    throw error
+  }
 }
 
 async function readJson(filePath: string): Promise<unknown> {
@@ -287,9 +334,13 @@ async function main(): Promise<void> {
     return
   }
 
+  const evidencePath = join(root, 'verification', 'mainnet', 'transaction-index.json')
   if (command === 'check-manifest') {
-    const evidencePath = join(root, 'verification', 'mainnet', 'transaction-index.json')
-    const evidenceErrors = validateManifestEvidence(parsed.manifest, await readJson(evidencePath))
+    const evidenceValue = await readJson(evidencePath)
+    const evidenceErrors = [
+      ...validateManifestEvidence(parsed.manifest, evidenceValue),
+      ...await validateCommittedReceiptArtifacts(root, evidenceValue),
+    ]
     if (evidenceErrors.length > 0) {
       for (const error of evidenceErrors) console.error(`error: ${error}`)
       process.exitCode = 1
@@ -305,8 +356,38 @@ async function main(): Promise<void> {
     return
   }
 
+  const existingValue = await readJsonIfPresent(evidencePath, { evidence: [] })
+  const committedErrors = [
+    ...validateManifestEvidence(parsed.manifest, existingValue, false),
+    ...await validateCommittedReceiptArtifacts(root, existingValue),
+  ]
+  if (committedErrors.length > 0) {
+    for (const error of committedErrors) console.error(`error: ${error}`)
+    process.exitCode = 1
+    return
+  }
+  const existing = parseEvidenceIndex(existingValue)
+  if (!existing.ok) {
+    for (const error of existing.errors) console.error(`error: ${error}`)
+    process.exitCode = 1
+    return
+  }
+
+  const committedHashes = canonicalSet(existing.evidence.map(({ transactionHash }) => transactionHash))
+  const pendingTransactions = parsed.manifest.transactions.filter((hash) => {
+    const canonical = canonicalStarknetFelt(hash)
+    return canonical !== null && !committedHashes.has(canonical)
+  })
+  if (pendingTransactions.length === 0) {
+    console.log(`No new transactions to verify; ${existing.evidence.length} receipts are already committed.`)
+    return
+  }
+
   const endpoint = process.env.LACUNA_RPC_URL ?? DEFAULT_RPC_URL
-  const results = await verifyMainnetManifest(parsed.manifest, createRpcTransport(endpoint))
+  const results = await verifyMainnetManifest(
+    { ...parsed.manifest, transactions: pendingTransactions },
+    createRpcTransport(endpoint),
+  )
   for (const result of results) {
     console.log(`${isVerified(result.evidence) ? 'verified' : 'failed'} ${result.evidence.transactionHash}`)
     result.errors.forEach((error) => console.error(`  ${error}`))
@@ -319,7 +400,13 @@ async function main(): Promise<void> {
       console.error('Refusing to write evidence because one or more receipt checks failed.')
     } else {
       await writeVerificationArtifacts(root, results)
-      console.log(`Wrote verified evidence under ${join('verification', 'mainnet')}.`)
+      const finalValue = await readJson(evidencePath)
+      const finalErrors = [
+        ...validateManifestEvidence(parsed.manifest, finalValue),
+        ...await validateCommittedReceiptArtifacts(root, finalValue),
+      ]
+      if (finalErrors.length > 0) throw new Error(finalErrors.join(' '))
+      console.log(`Appended ${results.length} verified receipt${results.length === 1 ? '' : 's'} under ${join('verification', 'mainnet')}.`)
     }
   }
 }

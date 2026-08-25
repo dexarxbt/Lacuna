@@ -8,8 +8,14 @@ import {
   type InjectedWallet,
   type WalletCapabilityReport,
 } from '@lacuna/wallet-bridge'
+import { createWalletSession, type WalletSession } from './walletSession'
 
 type DoctorState = 'idle' | 'choosing' | 'probing' | 'complete' | 'error'
+
+export type WalletDoctorProps = {
+  session: WalletSession | null
+  onSessionChange: (session: WalletSession | null) => void
+}
 
 const issueGuidance: Record<WalletCapabilityReport['issues'][number], string> = {
   'no-account': 'Unlock the wallet and approve account access.',
@@ -28,18 +34,18 @@ function shortAddress(address: string | null): string {
 
 function reportStatus(report: WalletCapabilityReport): { label: string; tone: string; summary: string } {
   if (report.strk20Status === 'unsupported') {
-    return { label: 'Unsupported', tone: 'blocked', summary: 'The required STRK20 balance method is unavailable.' }
+    return { label: 'Balance read unavailable', tone: 'blocked', summary: 'The wallet explicitly rejected wallet_strk20Balances as unsupported.' }
   }
   if (report.strk20Status === 'indeterminate') {
-    return { label: 'Check incomplete', tone: 'warning', summary: 'The wallet did not return enough evidence to decide.' }
+    return { label: 'Balance read inconclusive', tone: 'warning', summary: 'The probe did not prove whether wallet_strk20Balances is available.' }
   }
   if (report.registered === false) {
-    return { label: 'Registration needed', tone: 'warning', summary: 'STRK20 support is present, but this account is not registered.' }
+    return { label: 'Balance read proven', tone: 'warning', summary: 'wallet_strk20Balances exists, but the selected account is not registered.' }
   }
   if (report.issues.length > 0) {
-    return { label: 'Action needed', tone: 'warning', summary: 'STRK20 responded, but another capability needs attention.' }
+    return { label: 'Balance read proven', tone: 'warning', summary: 'The read method responded, but another wallet or network check needs attention.' }
   }
-  return { label: 'STRK20 ready', tone: 'ready', summary: 'Read-only capability checks passed.' }
+  return { label: 'Balance read proven', tone: 'ready', summary: 'wallet_strk20Balances returned a valid read-only response. Execution methods are assessed separately.' }
 }
 
 const focusableSelector = [
@@ -51,15 +57,15 @@ const focusableSelector = [
   '[tabindex]:not([tabindex="-1"])',
 ].join(',')
 
-export function WalletDoctor() {
+export function WalletDoctor({ session, onSessionChange }: WalletDoctorProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [state, setState] = useState<DoctorState>('idle')
   const [wallets, setWallets] = useState<InjectedWallet[]>([])
-  const [report, setReport] = useState<WalletCapabilityReport | null>(null)
   const [message, setMessage] = useState('')
   const triggerRef = useRef<HTMLButtonElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const probeIdRef = useRef(0)
+  const report = session?.report ?? null
 
   useEffect(() => {
     if (!isOpen) return
@@ -107,9 +113,18 @@ export function WalletDoctor() {
     }
   }, [isOpen])
 
+  function open() {
+    if (report) {
+      setState('complete')
+      setIsOpen(true)
+      return
+    }
+    discover()
+  }
+
   function discover() {
     setIsOpen(true)
-    setReport(null)
+    onSessionChange(null)
     setMessage('')
     const found = discoverInjectedWallets(window as unknown as Record<string, unknown>)
     setWallets(found)
@@ -129,7 +144,7 @@ export function WalletDoctor() {
     try {
       const nextReport = await probeWallet(wallet)
       if (probeIdRef.current !== probeId) return
-      setReport(nextReport)
+      onSessionChange(createWalletSession(wallet, nextReport))
       setMessage(nextReport.detail)
       setState('complete')
     } catch (error) {
@@ -145,6 +160,8 @@ export function WalletDoctor() {
   }
 
   const status = report ? reportStatus(report) : null
+  const prepareProven = session?.provenExecutionCapabilities.includes('strk20PrepareInvoke') === true
+  const submitProven = session?.provenExecutionCapabilities.includes('strk20InvokeTransaction') === true
 
   const sheet = isOpen ? createPortal(
     <div
@@ -172,9 +189,9 @@ export function WalletDoctor() {
         </header>
 
         <p className="doctor-intro" id="wallet-doctor-description">
-          After you start the probe, Lacuna requests account access, checks the network and
-          Wallet API, then calls the read-only STRK20 balance method. No transaction, proof,
-          or signature is requested.
+          After you start the probe, Lacuna requests account access, checks the network,
+          calls wallet_supportedWalletApi, then calls wallet_strk20Balances. This doctor
+          requests no transaction, proof, or signature.
         </p>
 
         <div className="doctor-mode-strip" aria-label="Probe boundaries">
@@ -212,25 +229,45 @@ export function WalletDoctor() {
               <dl>
                 <div><dt>Account</dt><dd title={report.account ?? undefined}>{shortAddress(report.account)}</dd></div>
                 <div><dt>Network</dt><dd>{report.chainId ?? 'Unknown'}</dd></div>
-                <div><dt>Wallet API</dt><dd>{report.apiVersions.join(', ') || (report.meetsRequiredApi ? `${REQUIRED_WALLET_API}+ inferred` : 'Not reported')}</dd></div>
-                <div><dt>STRK20 method</dt><dd>{report.strk20Status === 'supported' ? 'Available' : report.strk20Status === 'unsupported' ? 'Unavailable' : 'Inconclusive'}</dd></div>
-                <div><dt>Registration</dt><dd>{report.registered === null ? 'Unknown' : report.registered ? 'Registered' : 'Required'}</dd></div>
-                <div><dt>Shielded asset types</dt><dd>{report.balances.length}</dd></div>
+                <div><dt>Required Wallet API</dt><dd>{REQUIRED_WALLET_API}</dd></div>
+                <div><dt>Wallet-reported APIs</dt><dd>{report.apiVersions.join(', ') || 'Not reported'}</dd></div>
+                <div><dt>API compatibility</dt><dd>{report.meetsRequiredApi ? (report.apiVersions.length > 0 ? 'Requirement met' : 'Inferred from successful read') : 'Not proven'}</dd></div>
+                <div><dt>Selected account registration</dt><dd>{report.registered === null ? 'Unknown' : report.registered ? 'Registered' : 'Required'}</dd></div>
+                <div><dt>Wallet-reported token entries</dt><dd>{report.balances.length}</dd></div>
               </dl>
+
+              <div className="doctor-methods" aria-label="STRK20 method evidence">
+                <div className="doctor-section-heading"><span>Method evidence</span><small>Current in-memory session</small></div>
+                <div>
+                  <code>wallet_strk20Balances</code>
+                  <span className={`method-state ${report.strk20Status === 'supported' ? 'proven' : report.strk20Status === 'unsupported' ? 'unavailable' : 'untested'}`}>
+                    {report.strk20Status === 'supported' ? 'PROVEN' : report.strk20Status === 'unsupported' ? 'UNAVAILABLE' : 'INCONCLUSIVE'}
+                  </span>
+                  <small>Called by this read-only probe</small>
+                </div>
+                <div>
+                  <code>wallet_strk20PrepareInvoke</code>
+                  <span className={`method-state ${prepareProven ? 'proven' : 'untested'}`}>{prepareProven ? 'PROVEN' : 'NOT TESTED'}</span>
+                  <small>Proven only after a successful user-requested simulation</small>
+                </div>
+                <div>
+                  <code>wallet_strk20InvokeTransaction</code>
+                  <span className={`method-state ${submitProven ? 'proven' : 'untested'}`}>{submitProven ? 'PROVEN' : 'NOT TESTED'}</span>
+                  <small>Proven only after a consented submission returns a valid hash</small>
+                </div>
+              </div>
 
               <details className="doctor-detail" open={report.issues.length > 0}>
                 <summary>Probe diagnostics <span>{report.issues.length > 0 ? `${report.issues.length} issues` : 'passed'}</span></summary>
                 <p>{report.detail || 'The wallet returned no additional diagnostic detail.'}</p>
               </details>
 
-              {report.issues.length > 0 ? (
+              {report.issues.length > 0 && (
                 <div className="doctor-issues">
                   {report.issues.map((issue) => (
                     <div key={issue}><i /><span><b>{issue.replaceAll('-', ' ')}</b><small>{issueGuidance[issue]}</small></span></div>
                   ))}
                 </div>
-              ) : (
-                <div className="doctor-safe"><i /> Capability checks passed. Execution remains locked in this build.</div>
               )}
 
               <button className="doctor-recheck" onClick={discover} type="button">Check another wallet</button>
@@ -259,7 +296,7 @@ export function WalletDoctor() {
         aria-controls="wallet-doctor-panel"
         aria-expanded={isOpen}
         className={`wallet-trigger ${status?.tone ?? ''}`}
-        onClick={discover}
+        onClick={open}
         ref={triggerRef}
         type="button"
       >

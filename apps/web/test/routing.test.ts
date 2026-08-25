@@ -29,7 +29,7 @@ test('ships route-specific canonical and social metadata', async () => {
 
   assert.match(landing, /rel="canonical" href="https:\/\/lacuna-strk\.vercel\.app\/"/)
   assert.match(landing, /<title>Lacuna — Build private flows\. Know what leaks\.<\/title>/)
-  assert.match(landing, /Studio execution is locked; three mainnet pool receipts are verified and committed\./)
+  assert.match(landing, /Verified Mainnet pool receipts are published in an append-only evidence ledger\./)
   assert.match(landing, /property="og:title" content="Lacuna — Build private flows\. Know what leaks\."/)
   assert.match(studio, /rel="canonical" href="https:\/\/lacuna-strk\.vercel\.app\/studio"/)
   assert.match(studio, /property="og:title" content="Studio — Lacuna"/)
@@ -46,4 +46,25 @@ test('rewrites only supported Studio paths so unknown routes remain 404s', async
     { source: '/studio/', destination: '/studio/index.html' },
   ])
   assert.ok(config.rewrites.every(({ source }) => !source.includes('(.*)')))
+})
+
+
+test('ships a restrictive CSP with only the Mainnet RPC connection allowlist', async () => {
+  const config = JSON.parse(await readFile(new URL('../../../vercel.json', import.meta.url), 'utf8')) as {
+    headers: Array<{
+      source: string
+      headers: Array<{ key: string; value: string }>
+    }>
+  }
+  const globalHeaders = config.headers.find(({ source }) => source === '/(.*)')?.headers ?? []
+  const values = new Map(globalHeaders.map(({ key, value }) => [key, value]))
+  const csp = values.get('Content-Security-Policy') ?? ''
+
+  assert.match(csp, /default-src 'self'/)
+  assert.match(csp, /connect-src 'self' https:\/\/rpc\.starknet\.lava\.build/)
+  assert.match(csp, /frame-ancestors 'none'/)
+  assert.doesNotMatch(csp, /unsafe-inline|unsafe-eval|https:\s|\*/)
+  assert.equal(values.get('X-Frame-Options'), 'DENY')
+  assert.equal(values.get('X-Content-Type-Options'), 'nosniff')
+  assert.match(values.get('Permissions-Policy') ?? '', /camera=\(\), microphone=\(\), geolocation=\(\)/)
 })

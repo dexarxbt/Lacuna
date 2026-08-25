@@ -1,3 +1,5 @@
+import { evidenceSummary } from '../evidence'
+
 export function BoundaryArtwork() {
   return (
     <figure
@@ -42,7 +44,7 @@ export function BoundaryArtwork() {
         <span>REQUEST / PUBLIC</span><b>shielded transfer intent</b><i /><i /><i />
       </div>
       <div className="visual-card evidence-card" aria-hidden="true">
-        <span>MAINNET EVIDENCE</span><b>3 / 3 verified</b><i /><i />
+        <span>MAINNET EVIDENCE</span><b>{evidenceSummary.verifiedCount} verified</b><i /><i />
       </div>
       <div className="aperture" aria-hidden="true">
         <span className="aperture-left" />
@@ -50,7 +52,7 @@ export function BoundaryArtwork() {
         <span className="aperture-right" />
       </div>
       <figcaption>
-        Concept model: public request → private path → verifiable receipt. Three accepted Mainnet receipts are committed.
+        Concept model: public request → private path → verifiable receipt. {evidenceSummary.verifiedCount} accepted Mainnet receipts are committed.
       </figcaption>
     </figure>
   )

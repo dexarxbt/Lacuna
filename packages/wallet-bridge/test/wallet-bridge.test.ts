@@ -3,6 +3,7 @@ import test from 'node:test'
 import {
   compareVersions,
   discoverInjectedWallets,
+  formatWalletError,
   isUnknownWalletError,
   prepareInvoke,
   probeWallet,
@@ -36,6 +37,138 @@ test('compares wallet API versions numerically', () => {
   assert.equal(compareVersions('0.10.3', '0.10.3'), 0)
   assert.equal(compareVersions('0.10.4', '0.10.3'), 1)
   assert.equal(compareVersions('0.9.9', '0.10.3'), -1)
+})
+
+test('surfaces actionable nested diagnostics behind generic code 163', () => {
+  const error = {
+    code: 163,
+    message: 'An error occurred (UNKNOWN_ERROR)',
+    data: { error: { cause: { message: 'Private notes have not matured yet' } } },
+  }
+
+  assert.equal(
+    formatWalletError(error),
+    'Private notes have not matured yet (code 163)',
+  )
+})
+
+test('prefers a specific deep Wallet API code over generic wrappers', () => {
+  const error = {
+    code: 163,
+    message: 'An error occurred (UNKNOWN_ERROR)',
+    data: {
+      code: -32603,
+      message: 'Internal server error',
+      cause: { code: '119', message: 'An error occurred (INSUFFICIENT_PRIVATE_BALANCE)' },
+    },
+  }
+
+  assert.equal(walletErrorCode(error), 119)
+  assert.equal(
+    formatWalletError(error),
+    'An error occurred (INSUFFICIENT_PRIVATE_BALANCE) (code 119)',
+  )
+})
+
+test('keeps conflicting deep wallet codes ambiguous', () => {
+  const error = {
+    code: 163,
+    message: 'An error occurred (UNKNOWN_ERROR)',
+    error: { data: { code: 118, message: 'An error occurred (NOT_REGISTERED)' } },
+    cause: { error: { code: 119, message: 'An error occurred (INSUFFICIENT_PRIVATE_BALANCE)' } },
+  }
+
+  assert.equal(walletErrorCode(error), undefined)
+  assert.equal(isUnknownWalletError(error), false)
+  assert.match(formatWalletError(error), /Conflicting wallet errors/)
+})
+
+test('fails closed when nested wallet diagnostics exceed inspection bounds', () => {
+  const cyclic: Record<string, unknown> = { code: 163, message: 'An error occurred (UNKNOWN_ERROR)' }
+  cyclic.cause = cyclic
+  assert.equal(formatWalletError(cyclic), 'An error occurred (UNKNOWN_ERROR) (code 163)')
+
+  const crossLinked: Record<string, unknown> = { code: 163, message: 'An error occurred (UNKNOWN_ERROR)' }
+  let left = {} as Record<string, unknown>
+  let right = {} as Record<string, unknown>
+  crossLinked.error = left
+  crossLinked.data = right
+  for (let depth = 1; depth < 4; depth += 1) {
+    const nextLeft: Record<string, unknown> = {}
+    const nextRight: Record<string, unknown> = {}
+    left.error = nextLeft
+    right.data = nextRight
+    left = nextLeft
+    right = nextRight
+  }
+  left.code = 119
+  left.message = 'An error occurred (INSUFFICIENT_PRIVATE_BALANCE)'
+  left.cause = right
+  right.cause = left
+  assert.equal(walletErrorCode(crossLinked), 119)
+  assert.equal(
+    formatWalletError(crossLinked),
+    'An error occurred (INSUFFICIENT_PRIVATE_BALANCE) (code 119)',
+  )
+
+  const tooDeep: Record<string, unknown> = { code: 118, message: 'An error occurred (NOT_REGISTERED)' }
+  let cursor = tooDeep
+  for (let index = 0; index < 5; index += 1) {
+    const next: Record<string, unknown> = {}
+    cursor.cause = next
+    cursor = next
+  }
+  cursor.code = 119
+  cursor.message = 'An error occurred (INSUFFICIENT_PRIVATE_BALANCE)'
+  assert.equal(walletErrorCode(tooDeep), undefined)
+  assert.equal(isUnknownWalletError(tooDeep), false)
+  assert.equal(formatWalletError(tooDeep), 'Wallet error envelope exceeded safe inspection limits.')
+
+  const tooBroad: Record<string, unknown> = { code: -32601, message: 'Method not found' }
+  let frontier = [tooBroad]
+  for (let depth = 0; depth < 3; depth += 1) {
+    frontier = frontier.flatMap((record) => {
+      const children = [{}, {}, {}] as Record<string, unknown>[]
+      ;[record.error, record.data, record.cause] = children
+      return children
+    })
+  }
+  assert.equal(walletErrorCode(tooBroad), undefined)
+  assert.equal(formatWalletError(tooBroad), 'Wallet error envelope exceeded safe inspection limits.')
+})
+
+test('redacts private payload fields from both records and scalar messages', () => {
+  const secret = 'must-not-appear'
+  const error = {
+    code: 163,
+    message: `Provider rejected 0x${'a'.repeat(64)}`,
+    data: {
+      message: 'Private state service unavailable',
+      proof: { data: secret, output: [secret], proof_facts: [secret] },
+      calldata: [secret],
+      actions: [{ amount: secret }],
+    },
+  }
+  const formatted = formatWalletError(error)
+
+  assert.doesNotMatch(formatted, new RegExp(secret))
+  assert.doesNotMatch(formatted, /0x[a-f]{64}/i)
+  assert.match(formatted, /\[redacted\]/)
+
+  const serialized = formatWalletError({
+    code: 163,
+    message: 'An error occurred (UNKNOWN_ERROR)',
+    data: {
+      error: {
+        message: 'prepare failed; calldata=[0x1,0x2]; proof={data:short-secret,output:[0x3]}',
+      },
+    },
+  })
+  assert.equal(
+    serialized,
+    'Wallet diagnostic contained private payload fields; details redacted. (code 163)',
+  )
+  assert.doesNotMatch(serialized, /short-secret|0x1|0x2|0x3/)
 })
 
 test('probes mainnet and STRK20 support without reading secrets', async () => {

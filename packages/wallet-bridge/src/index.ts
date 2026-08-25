@@ -90,6 +90,84 @@ type NormalizedRpcError = {
   ambiguous: boolean
 }
 
+type RpcErrorCandidate = {
+  code?: number
+  message: string
+}
+
+type RpcErrorCandidateScan = {
+  candidates: RpcErrorCandidate[]
+  truncated: boolean
+}
+
+const RPC_ERROR_ENVELOPE_KEYS = ['error', 'data', 'cause'] as const
+const MAX_RPC_ERROR_DEPTH = 4
+const MAX_RPC_ERROR_RECORDS = 16
+const MAX_RPC_ERROR_MESSAGE_LENGTH = 320
+const PRIVATE_MESSAGE_FIELD_PATTERN = /(?:^|[\s{,;])["']?(?:calldata|proof(?:_facts)?|actions?|viewing[_\s-]*key|private[_\s-]*key)["']?\s*[:=]/i
+
+function ownValue(record: Record<string, unknown>, key: string): unknown {
+  try {
+    return Object.getOwnPropertyDescriptor(record, key)?.value
+  } catch {
+    return undefined
+  }
+}
+
+function sanitizeRpcMessage(value: unknown): string {
+  if (typeof value !== 'string') return ''
+  const normalized = value
+    .replace(/[\u0000-\u001f\u007f]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (PRIVATE_MESSAGE_FIELD_PATTERN.test(normalized)) {
+    return 'Wallet diagnostic contained private payload fields; details redacted.'
+  }
+  return normalized
+    .replace(/0x[0-9a-f]{16,}/gi, '[redacted]')
+    .replace(/[a-z0-9+/=_-]{80,}/gi, '[redacted]')
+    .slice(0, MAX_RPC_ERROR_MESSAGE_LENGTH)
+}
+
+function nestedRpcErrorRecords(record: Record<string, unknown>): Record<string, unknown>[] {
+  return RPC_ERROR_ENVELOPE_KEYS.flatMap((key) => {
+    const nested = asRecord(ownValue(record, key))
+    return nested ? [nested] : []
+  })
+}
+
+function rpcErrorCandidates(root: Record<string, unknown>): RpcErrorCandidateScan {
+  const queue: Array<{ record: Record<string, unknown>; depth: number }> = [{ record: root, depth: 0 }]
+  const enqueued = new WeakSet<object>([root])
+  const visited = new WeakSet<object>()
+  const candidates: RpcErrorCandidate[] = []
+  let truncated = false
+
+  while (queue.length > 0 && candidates.length < MAX_RPC_ERROR_RECORDS) {
+    const current = queue.shift()
+    if (!current || visited.has(current.record)) continue
+    visited.add(current.record)
+    candidates.push({
+      code: parseRpcCode(ownValue(current.record, 'code')),
+      message: sanitizeRpcMessage(ownValue(current.record, 'message')),
+    })
+
+    const nestedRecords = nestedRpcErrorRecords(current.record)
+    if (current.depth >= MAX_RPC_ERROR_DEPTH) {
+      if (nestedRecords.some((nested) => !enqueued.has(nested))) truncated = true
+      continue
+    }
+    for (const nested of nestedRecords) {
+      if (enqueued.has(nested)) continue
+      enqueued.add(nested)
+      queue.push({ record: nested, depth: current.depth + 1 })
+    }
+  }
+
+  if (queue.some(({ record }) => !visited.has(record))) truncated = true
+  return { candidates, truncated }
+}
+
 function parseRpcCode(value: unknown): number | undefined {
   if (typeof value === 'number' && Number.isFinite(value)) return value
   if (typeof value === 'string' && /^-?\d+$/.test(value)) return Number(value)
@@ -98,6 +176,8 @@ function parseRpcCode(value: unknown): number | undefined {
 
 type RpcErrorMeaning =
   | 'not-registered'
+  | 'insufficient-private-balance'
+  | 'privacy-leak'
   | 'api-version-unsupported'
   | 'method-unsupported'
   | 'user-refused'
@@ -105,6 +185,8 @@ type RpcErrorMeaning =
 
 function rpcCodeMeaning(code: number | undefined): RpcErrorMeaning | undefined {
   if (code === 118) return 'not-registered'
+  if (code === 119) return 'insufficient-private-balance'
+  if (code === 120) return 'privacy-leak'
   if (code === 162) return 'api-version-unsupported'
   if (code === -32601 || code === 4200) return 'method-unsupported'
   if (code === 113) return 'user-refused'
@@ -123,18 +205,27 @@ function rpcMessageMeaning(message: string): RpcErrorMeaning | undefined {
   return undefined
 }
 
+function isGenericRpcMessage(message: string): boolean {
+  return /^(An error occurred \(UNKNOWN_ERROR\)|UNKNOWN_ERROR|Internal server error|Request failed)$/i.test(message.trim())
+}
+
 function normalizeRpcError(error: unknown): NormalizedRpcError {
   const root = asRecord(error)
   if (!root) {
-    return { message: error instanceof Error ? error.message : String(error), ambiguous: false }
+    return {
+      message: sanitizeRpcMessage(error instanceof Error ? error.message : String(error)),
+      ambiguous: false,
+    }
   }
 
-  const records = [root, asRecord(root.error), asRecord(root.data), asRecord(root.cause)]
-    .filter((value): value is Record<string, unknown> => value !== null)
-  const candidates = records.map((record) => ({
-    code: parseRpcCode(record.code),
-    message: typeof record.message === 'string' ? record.message : '',
-  }))
+  const { candidates, truncated } = rpcErrorCandidates(root)
+  if (truncated) {
+    return {
+      message: 'Wallet error envelope exceeded safe inspection limits.',
+      ambiguous: true,
+    }
+  }
+
   const codes = [...new Set(candidates.flatMap(({ code }) => code === undefined ? [] : [code]))]
   const messages = [...new Set(candidates.map(({ message }) => message).filter(Boolean))]
   const meanings = new Set<RpcErrorMeaning>()
@@ -146,9 +237,11 @@ function normalizeRpcError(error: unknown): NormalizedRpcError {
     if (messageMeaning) meanings.add(messageMeaning)
   }
 
-  // JSON-RPC -32603 is commonly a generic outer wrapper. It may add diagnostics,
-  // but it must not erase a more specific structured Wallet API error such as 118.
-  const unknownSpecificCodes = codes.filter((code) => rpcCodeMeaning(code) === undefined && code !== -32603)
+  // JSON-RPC -32603 and Wallet API 163 are generic wrappers. They may add diagnostics,
+  // but they must not erase a more specific structured Wallet API error such as 118.
+  const unknownSpecificCodes = codes.filter((code) => (
+    rpcCodeMeaning(code) === undefined && code !== -32603 && code !== 163
+  ))
   const ambiguous = meanings.size > 1
     || (meanings.size > 0 && unknownSpecificCodes.length > 0)
     || (meanings.size === 0 && unknownSpecificCodes.length > 1)
@@ -167,15 +260,19 @@ function normalizeRpcError(error: unknown): NormalizedRpcError {
   const semanticMessageCandidate = meaning === undefined
     ? undefined
     : candidates.find(({ message }) => rpcMessageMeaning(message) === meaning)
-  const fallbackCodedCandidate = candidates.find(({ code }) => code !== undefined && code !== -32603)
+  const fallbackCodedCandidate = candidates.find(({ code }) => (
+    code !== undefined && code !== -32603 && code !== 163
+  )) ?? candidates.find(({ code }) => code !== undefined && code !== -32603)
     ?? candidates.find(({ code }) => code !== undefined)
+  const actionableMessage = messages.find((message) => !isGenericRpcMessage(message))
 
   return {
     code: semanticCodeCandidate?.code ?? fallbackCodedCandidate?.code,
     message: semanticCodeCandidate?.message
       || semanticMessageCandidate?.message
+      || actionableMessage
       || messages[0]
-      || String(error),
+      || 'The wallet returned an unreadable error.',
     ambiguous: false,
   }
 }
@@ -551,6 +648,7 @@ export function walletErrorCode(error: unknown): number | undefined {
 
 export function isUnknownWalletError(error: unknown): boolean {
   const normalized = normalizeRpcError(error)
+  if (normalized.ambiguous) return false
   return normalized.code === 163 || /\bUNKNOWN_ERROR\b/i.test(normalized.message)
 }
 

@@ -257,3 +257,21 @@ test('bounds each browser RPC request timeout', () => {
   assert.throws(() => createBrowserRpc('https://example.invalid', fetch, 999), /between 1000 and 30000/)
   assert.throws(() => createBrowserRpc('https://example.invalid', fetch, 30_001), /between 1000 and 30000/)
 })
+
+
+test('documents the exact STRK20 note-maturity recovery checks', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const component = await readFile(
+    new URL('../src/features/studio/ExecutionPanel.tsx', import.meta.url),
+    'utf8',
+  )
+
+  assert.match(
+    component,
+    /Wait at least 10 Starknet blocks after the latest shield, receive, or change note, and confirm the recipient is registered with STRK20\./,
+  )
+  assert.match(
+    component,
+    /Wait at least 10 Starknet blocks after the latest shield, receive, or change note, and confirm the public destination is a valid Starknet account\./,
+  )
+})

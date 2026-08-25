@@ -81,8 +81,8 @@ function walletActionErrorMessage(error: unknown, kind: ExecutionKind): string {
     ? 'Wallet code 163 is non-specific; the Wallet API does not identify an amount or payload field.'
     : 'The wallet returned a non-specific UNKNOWN_ERROR without a numeric error code.'
   const nextCheck = kind === 'transfer'
-    ? 'Confirm the recipient is registered with STRK20 and that the private notes are mature.'
-    : 'Confirm the private notes are mature and the public destination is a valid Starknet account.'
+    ? 'Wait at least 10 Starknet blocks after the latest shield, receive, or change note, and confirm the recipient is registered with STRK20.'
+    : 'Wait at least 10 Starknet blocks after the latest shield, receive, or change note, and confirm the public destination is a valid Starknet account.'
   return `${formatted}. ${unknownDescription} ${nextCheck}`
 }
 

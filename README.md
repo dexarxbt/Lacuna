@@ -26,7 +26,7 @@ The source, product, and evidence are public. The demo video is intentionally pe
 
 ## Product status
 
-| Capability | Current behavior |
+| Capability | Current behavior | 
 |---|---|
 | Recipe and disclosure engine | Deterministic, implemented, and tested |
 | Protocol checks | Registration, maturity, balance, capability, and invoke constraints |

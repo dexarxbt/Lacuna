@@ -409,6 +409,12 @@ export function ExecutionPanel({ session, onSessionChange }: ExecutionPanelProps
   }
 
   function startNewAction() {
+    cancelRecipientCheck()
+    setAmount('')
+    setRecipient('')
+    setRecipientConfirmed(false)
+    setRecipientRpcConsent(false)
+    setRecipientRegistration('unchecked')
     invalidateReview('Enter the next action, then run a fresh simulation.')
   }
 

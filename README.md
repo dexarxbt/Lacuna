@@ -31,7 +31,7 @@ The product combines three concerns that are usually separated: deterministic pr
 | Submission minimum | **6/3** verified transaction hashes |
 | Custom contracts | **0** — the product uses the Wallet API route |
 | Hosted demo | [lacuna-strk.vercel.app](https://lacuna-strk.vercel.app/) |
-| Demo video | Pending the final privacy-safe recording; no placeholder URL is published |
+| Demo video | [Watch the 3-minute demo](https://youtu.be/AaFNDux0sxk) |
 | Evidence operation labels | `unclassified-pool-interaction`; public receipts do not authenticate private intent |
 
 ## Judge quick path
@@ -44,7 +44,7 @@ The product combines three concerns that are usually separated: deterministic pr
 6. With a compatible registered Mainnet account, prepare a private transfer or withdrawal. The Studio re-probes the wallet, freezes the exact action, requests `simulate: true`, and exposes three review gates.
 7. Do not approve a live transaction unless you intend to spend Mainnet funds. A returned hash remains **submitted, not verified** until the independent receipt check passes.
 
-The source, product, manifest, evidence index, and raw receipts are public. The demo video will be added only after the author's final recording is uploaded to a real HTTPS URL.
+The source, product, manifest, evidence index, raw receipts, and [demo video](https://youtu.be/AaFNDux0sxk) are public.
 
 ## Verification vocabulary
 
@@ -162,7 +162,9 @@ The execution token selector accepts only tokens returned by the connected walle
 
 For private transfers, recipient registration is a separate prerequisite. The recipient can confirm registration without an RPC lookup, or the sender can explicitly consent to disclose that address to the configured public RPC for the pool's `get_public_key` check. Ready remains responsible for private sender-channel and token-subchannel setup.
 
-## Technology stack
+## Tech Stack
+
+**Stack:** React, React DOM, TypeScript, Vite, Node.js, npm workspaces, HTML, CSS, Starknet JSON-RPC, STRK20 Wallet API, Vercel, GitHub Actions.
 
 | Layer | Technology |
 |---|---|
@@ -279,8 +281,7 @@ This is unaudited sprint software. Use a dedicated wallet, fund only the intende
 - Public verification uses one configured RPC by default and does not verify a state proof.
 - All six evidence operation labels remain `unclassified-pool-interaction`; Lacuna does not infer intent from receipts.
 - No custom contract is listed because the core product uses the Wallet API route.
-- `strk20.json` contains six transaction hashes, the hosted demo URL, and no fabricated metadata.
-- `demo_video` is intentionally absent until the final recording is uploaded.
+- `strk20.json` contains six transaction hashes, the hosted demo URL, and the published demo video URL.
 
 ## Maintainer
 

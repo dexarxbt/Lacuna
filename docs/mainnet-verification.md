@@ -64,7 +64,7 @@ This checks:
 - schema validity and all-passing checks for every evidence entry;
 - deterministic re-derivation of each index record from its raw receipt.
 
-A `demo_video` field is optional while the real recording is pending. Lacuna does not publish a placeholder URL.
+Both demo links are optional during development, but each must use HTTPS when present. The current manifest includes the published demo video.
 
 ## CLI-enforced append-only verification
 
@@ -121,8 +121,9 @@ The root manifest remains intentionally minimal:
 {
   "transactions": ["0x..."],
   "contracts": [],
+  "demo_video": "https://youtu.be/AaFNDux0sxk",
   "demo_url": "https://lacuna-strk.vercel.app/"
 }
 ```
 
-Add `demo_video` only after a real HTTPS video URL exists. Do not list a custom contract unless the submitted transactions satisfy the applicable contract-evidence requirement. Never place wallet addresses, keys, notes, proofs, or private recipe inputs in evidence files.
+`demo_video` must remain a real public HTTPS video URL. Do not list a custom contract unless the submitted transactions satisfy the applicable contract-evidence requirement. Never place wallet addresses, keys, notes, proofs, or private recipe inputs in evidence files.

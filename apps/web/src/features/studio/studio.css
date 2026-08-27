@@ -329,6 +329,17 @@
 .execution-form input:focus,
 .execution-form select:focus { border-color: rgba(180,248,200,.55); box-shadow: 0 0 0 3px rgba(180,248,200,.06); }
 .execution-amount-help { color: #6f7b88; font: 8px/1.5 ui-monospace,monospace; }
+.execution-recipient-check { display: grid; gap: 10px; padding: 13px; border: 1px solid #2c3744; border-radius: 10px; background: rgba(145,167,255,.035); }
+.execution-recipient-check > strong { color: #c7cfd6; font-size: 9px; font-weight: 500; }
+.execution-recipient-check > p { margin: 0; color: #7f8b97; font-size: 8px; line-height: 1.55; }
+.execution-recipient-check label { display: grid; grid-template-columns: auto 1fr; gap: 9px; align-items: start; color: #aab3bc; font-size: 8px; line-height: 1.5; cursor: pointer; }
+.execution-recipient-check input { width: auto; min-height: 0; margin-top: 2px; padding: 0; accent-color: var(--private); }
+.execution-recipient-query { min-height: 38px; border: 1px solid rgba(145,167,255,.38); border-radius: 8px; color: #bdc9ff; background: rgba(145,167,255,.08); font-size: 8px; cursor: pointer; }
+.execution-recipient-query:disabled { border-color: #303a47; color: #697582; background: #10151c; cursor: not-allowed; }
+.execution-recipient-status { color: #6f7b88; font: 7.5px/1.5 ui-monospace,monospace; }
+.execution-recipient-status.registered { color: var(--private); }
+.execution-recipient-status.unregistered,
+.execution-recipient-status.failed { color: #ff9a91; }
 .execution-form fieldset:disabled { opacity: .65; }
 .execution-simulate,
 .execution-submit { min-height: 46px; border: 1px solid rgba(180,248,200,.38); border-radius: 10px; color: #07100a; background: var(--private); font-size: 10px; font-weight: 650; cursor: pointer; }

@@ -1,12 +1,64 @@
 import {
   STARKNET_MAINNET_CHAIN_ID,
+  formatWalletError,
+  isUnknownWalletError,
+  isUserRejection,
   validateActions,
+  walletErrorCode,
   type Address,
   type Strk20Action,
 } from '@lacuna/wallet-bridge'
 import type { WalletSession } from '../wallet-doctor/walletSession'
 
 export type ExecutionKind = 'transfer' | 'withdraw'
+export type ExecutionFailureStage = 'preflight' | 'prepare' | 'post-prepare' | 'submit' | 'post-submit'
+export type RecipientRegistrationStatus = 'unchecked' | 'checking' | 'registered' | 'unregistered' | 'failed'
+
+const EXECUTION_FAILURE_STAGE_LABELS: Readonly<Record<ExecutionFailureStage, string>> = Object.freeze({
+  preflight: 'Wallet/account preflight failed',
+  prepare: 'wallet_strk20PrepareInvoke failed',
+  'post-prepare': 'Post-prepare session validation failed',
+  submit: 'wallet_strk20InvokeTransaction failed',
+  'post-submit': 'Post-submit local handling failed',
+})
+
+export function walletActionErrorMessage(
+  error: unknown,
+  kind: ExecutionKind,
+  stage: ExecutionFailureStage,
+): string {
+  const formatted = isUserRejection(error)
+    ? 'The wallet request was rejected. Nothing was submitted.'
+    : formatWalletError(error)
+  const prefix = EXECUTION_FAILURE_STAGE_LABELS[stage]
+  if (!isUnknownWalletError(error)) return `${prefix}: ${formatted}`
+
+  const unknownDescription = walletErrorCode(error) === 163
+    ? 'Wallet code 163 is non-specific; the Wallet API does not identify an amount or payload field.'
+    : 'The wallet returned a non-specific UNKNOWN_ERROR without a numeric error code.'
+  const nextCheck = kind === 'transfer'
+    ? 'Wait at least 10 Starknet blocks after the latest shield, receive, or change note, and confirm the recipient is registered with STRK20.'
+    : 'Wait at least 10 Starknet blocks after the latest shield, receive, or change note, and confirm the public destination is a valid Starknet account.'
+  return `${prefix}: ${formatted}. ${unknownDescription} ${nextCheck}`
+}
+
+export function recipientIsReady(
+  kind: ExecutionKind,
+  recipientConfirmed: boolean,
+  registration: RecipientRegistrationStatus,
+): boolean {
+  if (kind === 'withdraw') return true
+  if (registration === 'unregistered') return false
+  return recipientConfirmed || registration === 'registered'
+}
+
+export function recipientCheckIsCurrent(
+  generation: number,
+  currentGeneration: number,
+  aborted: boolean,
+): boolean {
+  return !aborted && generation === currentGeneration
+}
 
 export type ExecutionDraft = Readonly<{
   kind: ExecutionKind

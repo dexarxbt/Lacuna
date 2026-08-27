@@ -1,12 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   formatWalletError,
-  isUnknownWalletError,
   isUserRejection,
   prepareInvoke,
   probeWallet,
   submitInvoke,
-  walletErrorCode,
   type PreparedInvoke,
 } from '@lacuna/wallet-bridge'
 import {
@@ -20,12 +18,18 @@ import {
   formatTokenAmount,
   getTokenAmountMetadata,
   parseTokenAmount,
+  recipientCheckIsCurrent,
+  recipientIsReady,
   sessionMatchesSnapshot,
+  walletActionErrorMessage,
   type ExecutionDraft,
+  type ExecutionFailureStage,
   type ExecutionKind,
   type ExecutionSnapshot,
+  type RecipientRegistrationStatus,
 } from './execution'
 import {
+  checkStrk20RecipientRegistration,
   createBrowserRpc,
   verifySubmittedTransaction,
   type ReceiptCheckResult,
@@ -36,9 +40,12 @@ type ExecutionPanelProps = {
   onSessionChange: (session: WalletSession | null) => void
 }
 
+type RecipientReadiness = 'recipient-confirmed' | 'rpc-verified' | 'not-applicable'
+
 type PreparedReview = Readonly<{
   snapshot: ExecutionSnapshot
   simulation: PreparedInvoke
+  recipientReadiness: RecipientReadiness
 }>
 
 type ConsentState = {
@@ -73,27 +80,17 @@ function errorMessage(error: unknown): string {
   return formatWalletError(error)
 }
 
-function walletActionErrorMessage(error: unknown, kind: ExecutionKind): string {
-  const formatted = errorMessage(error)
-  if (!isUnknownWalletError(error)) return formatted
-
-  const unknownDescription = walletErrorCode(error) === 163
-    ? 'Wallet code 163 is non-specific; the Wallet API does not identify an amount or payload field.'
-    : 'The wallet returned a non-specific UNKNOWN_ERROR without a numeric error code.'
-  const nextCheck = kind === 'transfer'
-    ? 'Wait at least 10 Starknet blocks after the latest shield, receive, or change note, and confirm the recipient is registered with STRK20.'
-    : 'Wait at least 10 Starknet blocks after the latest shield, receive, or change note, and confirm the public destination is a valid Starknet account.'
-  return `${formatted}. ${unknownDescription} ${nextCheck}`
-}
-
 export function ExecutionPanel({ session, onSessionChange }: ExecutionPanelProps) {
   const [kind, setKind] = useState<ExecutionKind>('transfer')
   const [token, setToken] = useState('')
   const [amount, setAmount] = useState('')
   const [recipient, setRecipient] = useState('')
+  const [recipientConfirmed, setRecipientConfirmed] = useState(false)
+  const [recipientRpcConsent, setRecipientRpcConsent] = useState(false)
+  const [recipientRegistration, setRecipientRegistration] = useState<RecipientRegistrationStatus>('unchecked')
   const [prepared, setPrepared] = useState<PreparedReview | null>(null)
   const [consent, setConsent] = useState<ConsentState>(initialConsent)
-  const [busy, setBusy] = useState<'simulating' | 'submitting' | 'verifying' | null>(null)
+  const [busy, setBusy] = useState<'checking-recipient' | 'simulating' | 'submitting' | 'verifying' | null>(null)
   const [message, setMessage] = useState('Run Wallet Doctor, then simulate an exact action before review.')
   const [errors, setErrors] = useState<string[]>([])
   const [transactionHash, setTransactionHash] = useState<string | null>(null)
@@ -101,6 +98,8 @@ export function ExecutionPanel({ session, onSessionChange }: ExecutionPanelProps
   const sessionRef = useRef(session)
   const submissionFlightRef = useRef(false)
   const verificationControllerRef = useRef<AbortController | null>(null)
+  const recipientCheckControllerRef = useRef<AbortController | null>(null)
+  const recipientCheckGenerationRef = useRef(0)
   const rpc = useMemo(() => createBrowserRpc(), [])
 
   const balances = session?.report.balances ?? []
@@ -108,11 +107,21 @@ export function ExecutionPanel({ session, onSessionChange }: ExecutionPanelProps
   const amountMetadata = getTokenAmountMetadata(token)
   const rawAmount = amountMetadata ? parseTokenAmount(amount, amountMetadata.decimals) ?? '' : amount
   const draft: ExecutionDraft = { kind, token, amount: rawAmount, recipient }
+  const recipientReady = recipientIsReady(kind, recipientConfirmed, recipientRegistration)
+  const recipientReadiness: RecipientReadiness = kind === 'withdraw'
+    ? 'not-applicable'
+    : recipientRegistration === 'registered'
+      ? 'rpc-verified'
+      : 'recipient-confirmed'
 
   useEffect(() => {
     sessionRef.current = session
     if (prepared && !sessionMatchesSnapshot(session, prepared.snapshot)) {
       verificationControllerRef.current?.abort()
+      recipientCheckGenerationRef.current += 1
+      recipientCheckControllerRef.current?.abort()
+      recipientCheckControllerRef.current = null
+      setRecipientRegistration('unchecked')
       setPrepared(null)
       setConsent(initialConsent)
       setTransactionHash(null)
@@ -130,7 +139,16 @@ export function ExecutionPanel({ session, onSessionChange }: ExecutionPanelProps
     if (!tokenStillAvailable) setToken(balances[0]?.token ?? '')
   }, [balances, token])
 
-  useEffect(() => () => verificationControllerRef.current?.abort(), [])
+  useEffect(() => () => {
+    verificationControllerRef.current?.abort()
+    recipientCheckControllerRef.current?.abort()
+  }, [])
+
+  function cancelRecipientCheck() {
+    recipientCheckGenerationRef.current += 1
+    recipientCheckControllerRef.current?.abort()
+    recipientCheckControllerRef.current = null
+  }
 
   function invalidateReview(nextMessage = 'Inputs changed. Run a new simulation before submitting.') {
     verificationControllerRef.current?.abort()
@@ -144,7 +162,11 @@ export function ExecutionPanel({ session, onSessionChange }: ExecutionPanelProps
   }
 
   function changeKind(nextKind: ExecutionKind) {
+    cancelRecipientCheck()
     setKind(nextKind)
+    setRecipientConfirmed(false)
+    setRecipientRpcConsent(false)
+    setRecipientRegistration('unchecked')
     invalidateReview()
   }
 
@@ -159,8 +181,63 @@ export function ExecutionPanel({ session, onSessionChange }: ExecutionPanelProps
   }
 
   function changeRecipient(nextRecipient: string) {
+    cancelRecipientCheck()
     setRecipient(nextRecipient.trim())
+    setRecipientConfirmed(false)
+    setRecipientRpcConsent(false)
+    setRecipientRegistration('unchecked')
     invalidateReview()
+  }
+
+  async function checkRecipientRegistration() {
+    if (busy !== null || kind !== 'transfer') return
+    recipientCheckGenerationRef.current += 1
+    const generation = recipientCheckGenerationRef.current
+    recipientCheckControllerRef.current?.abort()
+    const controller = new AbortController()
+    recipientCheckControllerRef.current = controller
+    setRecipientConfirmed(false)
+    setBusy('checking-recipient')
+    setRecipientRegistration('checking')
+    setErrors([])
+    setMessage('Checking recipient registration through the disclosed public Mainnet RPC…')
+    try {
+      const result = await checkStrk20RecipientRegistration(recipient, rpc, {
+        recipientDisclosureConfirmed: recipientRpcConsent,
+        signal: controller.signal,
+      })
+      if (!recipientCheckIsCurrent(
+        generation,
+        recipientCheckGenerationRef.current,
+        controller.signal.aborted,
+      )) return
+      if (result.registered) {
+        setRecipientRegistration('registered')
+        setMessage('Recipient registration is verified on the STRK20 Mainnet pool. Ready will establish any missing sender channel or token subchannel during prepare.')
+      } else {
+        setRecipientRegistration('unregistered')
+        setErrors(['The recipient is not registered with the STRK20 Mainnet pool. Only the recipient can enable STRK20 privacy in their wallet.'])
+        setMessage('Private transfer is blocked before any wallet simulation request.')
+      }
+    } catch (error) {
+      if (!recipientCheckIsCurrent(
+        generation,
+        recipientCheckGenerationRef.current,
+        controller.signal.aborted,
+      )) return
+      setRecipientRegistration('failed')
+      setErrors([errorMessage(error)])
+      setMessage('Recipient registration could not be verified. No wallet simulation request was made.')
+    } finally {
+      if (recipientCheckIsCurrent(
+        generation,
+        recipientCheckGenerationRef.current,
+        controller.signal.aborted,
+      )) {
+        recipientCheckControllerRef.current = null
+        setBusy(null)
+      }
+    }
   }
 
   async function simulate() {
@@ -168,6 +245,11 @@ export function ExecutionPanel({ session, onSessionChange }: ExecutionPanelProps
     if (amountMetadata && rawAmount === '') {
       setErrors([`Enter a valid ${amountMetadata.symbol} amount with at most ${amountMetadata.decimals} decimal places.`])
       setMessage('Simulation is blocked until the token amount is valid.')
+      return
+    }
+    if (!recipientReady) {
+      setErrors(['Confirm that the recipient enabled STRK20 privacy, or explicitly verify registration through the disclosed public RPC, before simulating.'])
+      setMessage('Private transfer is blocked because recipient readiness has not been confirmed.')
       return
     }
     const startingSession = sessionRef.current
@@ -180,6 +262,7 @@ export function ExecutionPanel({ session, onSessionChange }: ExecutionPanelProps
     setBusy('simulating')
     setErrors([])
     setMessage('Re-checking account, network, API, and private balances…')
+    let failureStage: ExecutionFailureStage = 'preflight'
     try {
       const freshReport = await probeWallet(startingSession.wallet)
       if (sessionRef.current?.wallet !== startingSession.wallet) {
@@ -196,20 +279,30 @@ export function ExecutionPanel({ session, onSessionChange }: ExecutionPanelProps
       }
 
       setMessage('Requesting a non-submittable wallet simulation…')
+      failureStage = 'prepare'
       const simulation = await prepareInvoke(freshSession.wallet, snapshotResult.snapshot.actions)
+      failureStage = 'post-prepare'
       if (sessionRef.current !== startingSession) {
         throw new Error('Wallet session changed during simulation. Review the current wallet and try again.')
       }
       const preparedSession = markExecutionCapabilityProven(freshSession, 'strk20PrepareInvoke')
       onSessionChange(preparedSession)
-      setPrepared(Object.freeze({ snapshot: snapshotResult.snapshot, simulation }))
+      setPrepared(Object.freeze({
+        snapshot: snapshotResult.snapshot,
+        simulation,
+        recipientReadiness,
+      }))
       setConsent(initialConsent)
       setTransactionHash(null)
       setReceiptCheck(null)
       setMessage('Simulation succeeded. Review the frozen action and confirm each gate.')
     } catch (error) {
-      setErrors([walletActionErrorMessage(error, kind)])
-      setMessage('Simulation did not complete. No transaction was submitted.')
+      setErrors([walletActionErrorMessage(error, requestedDraft.kind, failureStage)])
+      setMessage(failureStage === 'prepare'
+        ? 'Wallet simulation failed during wallet_strk20PrepareInvoke. No transaction was submitted.'
+        : failureStage === 'post-prepare'
+          ? 'Wallet preparation succeeded, but its response was discarded because the local wallet session changed. No transaction was submitted.'
+          : 'Simulation preflight did not complete. No wallet prepare request was made.')
     } finally {
       setBusy(null)
     }
@@ -264,6 +357,7 @@ export function ExecutionPanel({ session, onSessionChange }: ExecutionPanelProps
     setBusy('submitting')
     setErrors([])
     setMessage('Re-checking wallet, account, network, API, and balance before submission…')
+    let failureStage: ExecutionFailureStage = 'preflight'
     try {
       const latestReport = await probeWallet(currentSession.wallet)
       if (sessionRef.current !== currentSession) {
@@ -283,11 +377,14 @@ export function ExecutionPanel({ session, onSessionChange }: ExecutionPanelProps
         latestSession,
         'strk20PrepareInvoke',
       )
+      failureStage = 'submit'
       const result = await submitInvoke(preparedLatestSession.wallet, prepared.snapshot.actions, {
         networkConfirmed: true,
         disclosuresConfirmed: true,
         feeConfirmed: true,
       })
+      failureStage = 'post-submit'
+      setTransactionHash(result.transaction_hash)
       if (sessionRef.current === currentSession) {
         const submittedSession = markExecutionCapabilityProven(
           preparedLatestSession,
@@ -295,12 +392,16 @@ export function ExecutionPanel({ session, onSessionChange }: ExecutionPanelProps
         )
         onSessionChange(submittedSession)
       }
-      setTransactionHash(result.transaction_hash)
       setMessage('Transaction hash returned. This means submitted, not verified.')
       await verifyReceipt(result.transaction_hash, prepared.snapshot)
     } catch (error) {
-      setErrors([walletActionErrorMessage(error, kind)])
-      setMessage('Submission stopped or failed before a valid transaction hash returned. Lacuna did not retry.')
+      const submittedKind: ExecutionKind = prepared.snapshot.action.type === 'transfer' ? 'transfer' : 'withdraw'
+      setErrors([walletActionErrorMessage(error, submittedKind, failureStage)])
+      setMessage(failureStage === 'submit'
+        ? 'Wallet submission failed during wallet_strk20InvokeTransaction before a valid transaction hash returned. Lacuna did not retry.'
+        : failureStage === 'post-submit'
+          ? 'The wallet returned from submission, but local post-submit handling failed. Check wallet activity before retrying; Lacuna did not retry.'
+          : 'Final wallet preflight failed before wallet_strk20InvokeTransaction. No submission request was made.')
       setBusy(null)
     } finally {
       submissionFlightRef.current = false
@@ -363,7 +464,7 @@ export function ExecutionPanel({ session, onSessionChange }: ExecutionPanelProps
             </label>
 
             <label>
-              {kind === 'transfer' ? 'Registered recipient address' : 'Public destination address'}
+              {kind === 'transfer' ? 'Recipient address' : 'Public destination address'}
               <input
                 autoComplete="off"
                 onChange={(event) => changeRecipient(event.target.value)}
@@ -372,9 +473,53 @@ export function ExecutionPanel({ session, onSessionChange }: ExecutionPanelProps
                 spellCheck={false}
                 value={recipient}
               />
+              {kind === 'transfer' && (
+                <small className="execution-amount-help">
+                  Registration is a transfer-only prerequisite. Lacuna never assumes an address is registered.
+                </small>
+              )}
             </label>
 
-            <button className="execution-simulate" disabled={!session || balances.length === 0 || busy !== null} type="submit">
+            {kind === 'transfer' && (
+              <div className="execution-recipient-check">
+                <strong>Recipient readiness</strong>
+                <p>Ready handles sender channel and token-subchannel setup privately. Before prepare, confirm registration without an RPC lookup, or explicitly opt in to the public check below.</p>
+                <label>
+                  <input
+                    checked={recipientConfirmed}
+                    disabled={recipientRegistration === 'unregistered'}
+                    onChange={(event) => setRecipientConfirmed(event.target.checked)}
+                    type="checkbox"
+                  />
+                  <span>The recipient confirmed they enabled STRK20 privacy in their own wallet.</span>
+                </label>
+                <label>
+                  <input
+                    checked={recipientRpcConsent}
+                    onChange={(event) => setRecipientRpcConsent(event.target.checked)}
+                    type="checkbox"
+                  />
+                  <span>I consent to disclose this recipient address to https://rpc.starknet.lava.build for a public STRK20 registration lookup.</span>
+                </label>
+                <button
+                  className="execution-recipient-query"
+                  disabled={!recipient || !recipientRpcConsent || busy !== null}
+                  onClick={() => { void checkRecipientRegistration() }}
+                  type="button"
+                >
+                  {recipientRegistration === 'checking' ? 'Checking registration…' : 'Check registration on Mainnet'}
+                </button>
+                <small className={`execution-recipient-status ${recipientRegistration}`}>
+                  {recipientRegistration === 'registered' && 'Registered on the verified STRK20 Mainnet pool.'}
+                  {recipientRegistration === 'unregistered' && 'Not registered. The recipient must enable STRK20 privacy first.'}
+                  {recipientRegistration === 'failed' && 'Registration lookup failed; review the diagnostic below.'}
+                  {recipientRegistration === 'checking' && 'Lookup in progress; the recipient has been disclosed to the selected RPC.'}
+                  {recipientRegistration === 'unchecked' && 'No recipient address has been sent by this check.'}
+                </small>
+              </div>
+            )}
+
+            <button className="execution-simulate" disabled={!session || balances.length === 0 || !recipientReady || busy !== null} type="submit">
               {busy === 'simulating' ? 'Simulating in wallet…' : 'Run fresh simulation'}
             </button>
           </fieldset>
@@ -395,6 +540,7 @@ export function ExecutionPanel({ session, onSessionChange }: ExecutionPanelProps
                 <div><dt>Token</dt><dd title={'token' in prepared.snapshot.action ? prepared.snapshot.action.token : ''}>{'token' in prepared.snapshot.action ? shortFelt(prepared.snapshot.action.token) : ''}</dd></div>
                 <div><dt>Amount</dt><dd>{'amount' in prepared.snapshot.action && 'token' in prepared.snapshot.action ? displayFrozenAmount(prepared.snapshot.action.token, prepared.snapshot.action.amount) : ''}</dd></div>
                 <div><dt>Recipient</dt><dd title={'recipient' in prepared.snapshot.action ? prepared.snapshot.action.recipient : ''}>{'recipient' in prepared.snapshot.action ? shortFelt(prepared.snapshot.action.recipient) : ''}</dd></div>
+                <div><dt>Recipient preflight</dt><dd>{prepared.recipientReadiness === 'rpc-verified' ? 'Pool registration verified' : prepared.recipientReadiness === 'recipient-confirmed' ? 'Confirmed by recipient' : 'Not required for withdrawal'}</dd></div>
                 <div><dt>Wallet call</dt><dd>{shortFelt(prepared.simulation.call.contractAddress)} / {prepared.simulation.call.entryPoint}</dd></div>
               </dl>
 

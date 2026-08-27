@@ -1,4 +1,5 @@
 import {
+  STRK20_MAINNET_POOL,
   isVerified,
   verifyReceiptValue,
   type TransactionEvidence,
@@ -7,6 +8,9 @@ import { STARKNET_MAINNET_CHAIN_ID } from '@lacuna/wallet-bridge'
 
 export const MAINNET_RPC_URL = 'https://rpc.starknet.lava.build'
 const MAINNET_CHAIN_ID_HEX = '0x534e5f4d41494e'
+const STARKNET_FIELD_PRIME = 2n ** 251n + 17n * 2n ** 192n + 1n
+// Starknet selector for get_public_key, derived as keccak(name) masked to 250 bits.
+const GET_PUBLIC_KEY_SELECTOR = '0x1a35984e05126dbecb7c3bb9929e7dd9106d460c59b1633739a5c733a5fb13b'
 
 type JsonRecord = Record<string, unknown>
 export type RpcTransport = (method: string, params?: unknown, signal?: AbortSignal) => Promise<unknown>
@@ -62,6 +66,64 @@ export function createBrowserRpc(
     }
     return payload.result
   }
+}
+
+export type RecipientRegistrationCheck = Readonly<{
+  registered: boolean
+}>
+
+function parseNonZeroAddress(value: string): string {
+  if (!/^0x[0-9a-f]+$/i.test(value)) {
+    throw new Error('Recipient must be a non-zero Starknet hex address before registration can be checked.')
+  }
+  try {
+    const felt = BigInt(value)
+    if (felt <= 0n || felt >= STARKNET_FIELD_PRIME) throw new Error()
+    return `0x${felt.toString(16)}`
+  } catch {
+    throw new Error('Recipient must be a non-zero Starknet hex address before registration can be checked.')
+  }
+}
+
+function parsePublicKeyResult(value: unknown): bigint {
+  if (!Array.isArray(value) || value.length !== 1 || typeof value[0] !== 'string') {
+    throw new Error('Mainnet RPC returned a malformed STRK20 registration response.')
+  }
+  try {
+    const publicKey = BigInt(value[0])
+    if (publicKey < 0n || publicKey >= STARKNET_FIELD_PRIME) throw new Error()
+    return publicKey
+  } catch {
+    throw new Error('Mainnet RPC returned a malformed STRK20 registration response.')
+  }
+}
+
+export async function checkStrk20RecipientRegistration(
+  recipient: string,
+  rpc: RpcTransport,
+  options: Readonly<{
+    recipientDisclosureConfirmed: boolean
+    signal?: AbortSignal
+  }>,
+): Promise<RecipientRegistrationCheck> {
+  if (!options.recipientDisclosureConfirmed) {
+    throw new Error('Recipient registration was not queried because public RPC disclosure was not confirmed.')
+  }
+  const canonicalRecipient = parseNonZeroAddress(recipient)
+  const chainId = await rpc('starknet_chainId', {}, options.signal)
+  if (chainId !== STARKNET_MAINNET_CHAIN_ID && chainId !== MAINNET_CHAIN_ID_HEX) {
+    throw new Error(`Registration RPC is not Starknet Mainnet; received ${String(chainId)}.`)
+  }
+
+  const result = await rpc('starknet_call', {
+    request: {
+      contract_address: STRK20_MAINNET_POOL,
+      entry_point_selector: GET_PUBLIC_KEY_SELECTOR,
+      calldata: [canonicalRecipient],
+    },
+    block_id: 'latest',
+  }, options.signal)
+  return Object.freeze({ registered: parsePublicKeyResult(result) !== 0n })
 }
 
 export async function verifySubmittedTransaction(

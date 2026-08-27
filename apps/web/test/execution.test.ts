@@ -17,10 +17,14 @@ import {
   formatTokenAmount,
   getTokenAmountMetadata,
   parseTokenAmount,
+  recipientCheckIsCurrent,
+  recipientIsReady,
   sessionMatchesSnapshot,
+  walletActionErrorMessage,
   type ExecutionDraft,
 } from '../src/features/studio/execution.ts'
 import {
+  checkStrk20RecipientRegistration,
   createBrowserRpc,
   verifySubmittedTransaction,
   type RpcTransport,
@@ -259,19 +263,131 @@ test('bounds each browser RPC request timeout', () => {
 })
 
 
+test('checks recipient registration only after explicit public RPC disclosure consent', async () => {
+  const calls: Array<{ method: string; params: unknown }> = []
+  const registrationRpc: RpcTransport = async (method, params) => {
+    calls.push({ method, params })
+    if (method === 'starknet_chainId') return 'SN_MAIN'
+    if (method === 'starknet_call') return ['0x123']
+    throw new Error(`Unexpected method: ${method}`)
+  }
+
+  await assert.rejects(
+    checkStrk20RecipientRegistration(recipient, registrationRpc, {
+      recipientDisclosureConfirmed: false,
+    }),
+    /public RPC disclosure was not confirmed/,
+  )
+  assert.equal(calls.length, 0)
+
+  await assert.rejects(
+    checkStrk20RecipientRegistration('not-an-address', registrationRpc, {
+      recipientDisclosureConfirmed: true,
+    }),
+    /non-zero Starknet hex address/,
+  )
+  assert.equal(calls.length, 0)
+
+  const registered = await checkStrk20RecipientRegistration(recipient, registrationRpc, {
+    recipientDisclosureConfirmed: true,
+  })
+  assert.deepEqual(registered, { registered: true })
+  assert.deepEqual(calls, [
+    { method: 'starknet_chainId', params: {} },
+    {
+      method: 'starknet_call',
+      params: {
+        request: {
+          contract_address: STRK20_MAINNET_POOL,
+          entry_point_selector: '0x1a35984e05126dbecb7c3bb9929e7dd9106d460c59b1633739a5c733a5fb13b',
+          calldata: [recipient],
+        },
+        block_id: 'latest',
+      },
+    },
+  ])
+})
+
+test('distinguishes unregistered recipients and rejects unsafe registration responses', async () => {
+  const unregisteredRpc: RpcTransport = async (method) => (
+    method === 'starknet_chainId' ? '0x534e5f4d41494e' : ['0x0']
+  )
+  const unregistered = await checkStrk20RecipientRegistration(recipient, unregisteredRpc, {
+    recipientDisclosureConfirmed: true,
+  })
+  assert.deepEqual(unregistered, { registered: false })
+
+  let wrongNetworkCalls = 0
+  const wrongNetworkRpc: RpcTransport = async () => {
+    wrongNetworkCalls += 1
+    return 'SN_SEPOLIA'
+  }
+  await assert.rejects(
+    checkStrk20RecipientRegistration(recipient, wrongNetworkRpc, {
+      recipientDisclosureConfirmed: true,
+    }),
+    /not Starknet Mainnet/,
+  )
+  assert.equal(wrongNetworkCalls, 1)
+
+  const malformedRpc: RpcTransport = async (method) => (
+    method === 'starknet_chainId' ? 'SN_MAIN' : ['0x1', '0x2']
+  )
+  await assert.rejects(
+    checkStrk20RecipientRegistration(recipient, malformedRpc, {
+      recipientDisclosureConfirmed: true,
+    }),
+    /malformed STRK20 registration response/,
+  )
+})
+
+test('makes an explicit unregistered result authoritative while withdrawal stays unaffected', () => {
+  assert.equal(recipientIsReady('transfer', false, 'unchecked'), false)
+  assert.equal(recipientIsReady('transfer', true, 'unchecked'), true)
+  assert.equal(recipientIsReady('transfer', false, 'registered'), true)
+  assert.equal(recipientIsReady('transfer', true, 'unregistered'), false)
+  assert.equal(recipientIsReady('withdraw', false, 'unregistered'), true)
+  assert.equal(recipientCheckIsCurrent(3, 3, false), true)
+  assert.equal(recipientCheckIsCurrent(3, 4, false), false)
+  assert.equal(recipientCheckIsCurrent(3, 3, true), false)
+})
+
+test('attributes generic wallet failures to the exact prepare or submit stage', () => {
+  const unknown = { code: 163, message: 'An error occurred (UNKNOWN_ERROR)' }
+  const prepareMessage = walletActionErrorMessage(unknown, 'transfer', 'prepare')
+  const postPrepareMessage = walletActionErrorMessage(
+    new Error('Wallet session changed after preparation.'),
+    'transfer',
+    'post-prepare',
+  )
+  const submitMessage = walletActionErrorMessage(unknown, 'transfer', 'submit')
+
+  assert.match(prepareMessage, /^wallet_strk20PrepareInvoke failed:/)
+  assert.match(postPrepareMessage, /^Post-prepare session validation failed:/)
+  assert.doesNotMatch(postPrepareMessage, /^wallet_strk20PrepareInvoke failed:/)
+  assert.match(submitMessage, /^wallet_strk20InvokeTransaction failed:/)
+  assert.match(prepareMessage, /confirm the recipient is registered with STRK20/)
+})
+
 test('documents the exact STRK20 note-maturity recovery checks', async () => {
   const { readFile } = await import('node:fs/promises')
+  const execution = await readFile(
+    new URL('../src/features/studio/execution.ts', import.meta.url),
+    'utf8',
+  )
   const component = await readFile(
     new URL('../src/features/studio/ExecutionPanel.tsx', import.meta.url),
     'utf8',
   )
 
   assert.match(
-    component,
+    execution,
     /Wait at least 10 Starknet blocks after the latest shield, receive, or change note, and confirm the recipient is registered with STRK20\./,
   )
   assert.match(
-    component,
+    execution,
     /Wait at least 10 Starknet blocks after the latest shield, receive, or change note, and confirm the public destination is a valid Starknet account\./,
   )
+  assert.match(component, /I consent to disclose this recipient address to https:\/\/rpc\.starknet\.lava\.build/)
+  assert.match(component, /disabled=\{!session \|\| balances\.length === 0 \|\| !recipientReady \|\| busy !== null\}/)
 })

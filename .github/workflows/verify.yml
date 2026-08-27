@@ -33,4 +33,16 @@ jobs:
       - name: Install locked dependencies
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Verify repository
-        run: npm run verify
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run verify 2>&1 | tee verify.log
+      - name: Surface verification failure
+        if: failure()
+        shell: bash
+        run: |
+          log="$(tail -c 8000 verify.log)"
+          log="${log//'%'/'%25'}"
+          log="${log//$'\r'/'%0D'}"
+          log="${log//$'\n'/'%0A'}"
+          echo "::error title=Verification failure::$log"

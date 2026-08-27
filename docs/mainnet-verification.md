@@ -59,12 +59,14 @@ This checks:
 - Starknet hash/address syntax;
 - canonical uniqueness, including leading-zero and case equivalents;
 - HTTPS demo links when present;
-- exact agreement between manifest hashes and committed evidence records;
-- schema validity and all-passing checks for every evidence entry.
+- exact agreement between manifest hashes and evidence records;
+- one matching raw receipt for every indexed record;
+- schema validity and all-passing checks for every evidence entry;
+- deterministic re-derivation of each index record from its raw receipt.
 
 A `demo_video` field is optional while the real recording is pending. Lacuna does not publish a placeholder URL.
 
-## Append-only Mainnet verification
+## CLI-enforced append-only verification
 
 Add new canonically unique transaction hashes to root `strk20.json`, then run:
 
@@ -74,16 +76,16 @@ npm run verify:mainnet -- --write
 
 The command:
 
-1. validates the existing committed index and re-derives every indexed record from its raw receipt;
+1. validates the existing index and re-derives every indexed record from its raw receipt;
 2. rejects missing, unindexed, tampered, or mismatched raw receipt artifacts;
-3. separates committed and pending manifest hashes by canonical felt identity;
+3. separates indexed and pending manifest hashes by canonical felt identity;
 4. queries only pending hashes;
 5. verifies all pending receipts against Mainnet and the exact pool;
 6. validates the complete next index before filesystem publication;
-7. creates each new receipt at an exclusive immutable path and never rewrites prior receipts;
+7. creates each new receipt at an exclusive path and never rewrites prior receipts;
 8. publishes the merged index with a same-directory rename only after every new receipt is durable;
 9. rejects canonical duplicates and receipt-path collisions;
-10. performs no writes when every manifest hash is already committed.
+10. performs no writes when every manifest hash is already indexed.
 
 If receipt validation fails, no files are written. If a filesystem failure occurs before index publication, newly created paths are removed on the handled error path. A process interruption can leave an unindexed receipt, which the next manifest check detects and rejects; the prior index and its referenced receipts remain intact.
 
@@ -94,21 +96,26 @@ verification/mainnet/transaction-index.json
 verification/mainnet/receipts/<transaction-hash>.json
 ```
 
-Existing records use `unclassified-pool-interaction` unless reviewed intent data supports a more precise operation. The verifier does not infer private intent from a public receipt.
+Records use `unclassified-pool-interaction` unless separately reviewed intent data supports a more precise operation. The verifier does not infer private intent from a public receipt.
 
-## Current committed evidence
+## Current verified evidence
+
+The manifest and evidence index contain six canonically unique Mainnet transactions. Every record has four passing checks, for 24 passing checks in total.
 
 | Transaction | Block | Status |
 |---|---:|---|
 | [`0x02e991…1f720`](https://voyager.online/tx/0x02e9918193a344303b170839bc1ab5737758e8306887cfb12c899ea2c481f720) | 13,786,473 | `SUCCEEDED`, `ACCEPTED_ON_L2`, pool event |
 | [`0x05f623…11a0cd`](https://voyager.online/tx/0x05f6231da1b66f28964af7ac872ea85a3b1310516c90cc10cf2b9f57c011a0cd) | 13,788,410 | `SUCCEEDED`, `ACCEPTED_ON_L2`, pool event |
 | [`0x036e91…8da3`](https://voyager.online/tx/0x036e91f666a49e95c7b125a9d711eaf425c4bd1a1c8fcad98a503d83dbaf8da3) | 13,788,382 | `SUCCEEDED`, `ACCEPTED_ON_L2`, pool event |
+| [`0x6e6469…0b5ec`](https://voyager.online/tx/0x6e64697a93ff7b71313e69ea76dae0696ca03b7b85d93d2d736bcba6190b5ec) | 13,936,911 | `SUCCEEDED`, `ACCEPTED_ON_L2`, pool event |
+| [`0x031fdd…7b0f2`](https://voyager.online/tx/0x031fdd9bea8f10dee78fd63ef152586c62efa7146c415927fbb5bc1bd207b0f2) | 13,937,171 | `SUCCEEDED`, `ACCEPTED_ON_L2`, pool event |
+| [`0x04dd79…931c4`](https://voyager.online/tx/0x04dd797282b7453d2780ed18935b82981c01f6602d4dd2b8e7aa7a0d1f8931c4) | 13,937,473 | `SUCCEEDED`, `ACCEPTED_ON_L2`, pool event |
 
-This is the current append-only set, not a maximum.
+This is the current CLI-managed evidence set, not a maximum. These records prove accepted interactions with the exact pool; they do not authenticate the private operation that produced each receipt.
 
 ## Submission manifest
 
-The official root file remains minimal:
+The root manifest remains intentionally minimal:
 
 ```json
 {

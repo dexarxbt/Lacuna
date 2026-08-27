@@ -107,6 +107,114 @@
         }
       ],
       "explorerUrl": "https://voyager.online/tx/0x036e91f666a49e95c7b125a9d711eaf425c4bd1a1c8fcad98a503d83dbaf8da3"
+    },
+    {
+      "version": 2,
+      "transactionHash": "0x6e64697a93ff7b71313e69ea76dae0696ca03b7b85d93d2d736bcba6190b5ec",
+      "chainId": "SN_MAIN",
+      "poolAddress": "0x040337b1af3c663e86e333bab5a4b28da8d4652a15a69beee2b677776ffe812a",
+      "operation": "unclassified-pool-interaction",
+      "actualFee": {
+        "amount": "3003915229051363584",
+        "unit": "FRI"
+      },
+      "blockNumber": 13936911,
+      "verifiedAt": "2026-08-27T09:24:47.898Z",
+      "checks": [
+        {
+          "name": "receipt-hash-matches",
+          "passed": true,
+          "detail": "Receipt transaction hash matches the requested hash."
+        },
+        {
+          "name": "receipt-succeeded",
+          "passed": true,
+          "detail": "Execution status is SUCCEEDED."
+        },
+        {
+          "name": "touched-pool",
+          "passed": true,
+          "detail": "Receipt includes an event from the verified STRK20 pool."
+        },
+        {
+          "name": "block-confirmed",
+          "passed": true,
+          "detail": "ACCEPTED_ON_L2 in block 13936911."
+        }
+      ],
+      "explorerUrl": "https://voyager.online/tx/0x6e64697a93ff7b71313e69ea76dae0696ca03b7b85d93d2d736bcba6190b5ec"
+    },
+    {
+      "version": 2,
+      "transactionHash": "0x031fdd9bea8f10dee78fd63ef152586c62efa7146c415927fbb5bc1bd207b0f2",
+      "chainId": "SN_MAIN",
+      "poolAddress": "0x040337b1af3c663e86e333bab5a4b28da8d4652a15a69beee2b677776ffe812a",
+      "operation": "unclassified-pool-interaction",
+      "actualFee": {
+        "amount": "3050018974489540416",
+        "unit": "FRI"
+      },
+      "blockNumber": 13937171,
+      "verifiedAt": "2026-08-27T09:29:37.134Z",
+      "checks": [
+        {
+          "name": "receipt-hash-matches",
+          "passed": true,
+          "detail": "Receipt transaction hash matches the requested hash."
+        },
+        {
+          "name": "receipt-succeeded",
+          "passed": true,
+          "detail": "Execution status is SUCCEEDED."
+        },
+        {
+          "name": "touched-pool",
+          "passed": true,
+          "detail": "Receipt includes an event from the verified STRK20 pool."
+        },
+        {
+          "name": "block-confirmed",
+          "passed": true,
+          "detail": "ACCEPTED_ON_L2 in block 13937171."
+        }
+      ],
+      "explorerUrl": "https://voyager.online/tx/0x031fdd9bea8f10dee78fd63ef152586c62efa7146c415927fbb5bc1bd207b0f2"
+    },
+    {
+      "version": 2,
+      "transactionHash": "0x04dd797282b7453d2780ed18935b82981c01f6602d4dd2b8e7aa7a0d1f8931c4",
+      "chainId": "SN_MAIN",
+      "poolAddress": "0x040337b1af3c663e86e333bab5a4b28da8d4652a15a69beee2b677776ffe812a",
+      "operation": "unclassified-pool-interaction",
+      "actualFee": {
+        "amount": "2997070751575864000",
+        "unit": "FRI"
+      },
+      "blockNumber": 13937473,
+      "verifiedAt": "2026-08-27T09:29:37.134Z",
+      "checks": [
+        {
+          "name": "receipt-hash-matches",
+          "passed": true,
+          "detail": "Receipt transaction hash matches the requested hash."
+        },
+        {
+          "name": "receipt-succeeded",
+          "passed": true,
+          "detail": "Execution status is SUCCEEDED."
+        },
+        {
+          "name": "touched-pool",
+          "passed": true,
+          "detail": "Receipt includes an event from the verified STRK20 pool."
+        },
+        {
+          "name": "block-confirmed",
+          "passed": true,
+          "detail": "ACCEPTED_ON_L2 in block 13937473."
+        }
+      ],
+      "explorerUrl": "https://voyager.online/tx/0x04dd797282b7453d2780ed18935b82981c01f6602d4dd2b8e7aa7a0d1f8931c4"
     }
   ]
 }

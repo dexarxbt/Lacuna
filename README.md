@@ -24,8 +24,6 @@
     <img src="https://img.shields.io/badge/STRK20_Wallet_API-0.10.3-6C47FF?style=flat-square" alt="STRK20 Wallet API 0.10.3" />
     <img src="https://img.shields.io/badge/npm-workspaces-CB3837?style=flat-square&amp;logo=npm&amp;logoColor=white" alt="npm workspaces" />
     <img src="https://img.shields.io/badge/node%3Atest-built--in-5FA04E?style=flat-square&amp;logo=nodedotjs&amp;logoColor=white" alt="Built-in Node.js test runner" />
-    <img src="https://img.shields.io/badge/Vercel-deployed-000000?style=flat-square&amp;logo=vercel&amp;logoColor=white" alt="Deployed on Vercel" />
-    <img src="https://img.shields.io/badge/GitHub_Actions-verified-2088FF?style=flat-square&amp;logo=githubactions&amp;logoColor=white" alt="Verified with GitHub Actions" />
   </p>
 </div>
 

@@ -14,6 +14,19 @@
   <p>
     <a href="https://github.com/dexarxbt/Lacuna/actions/workflows/verify.yml"><img src="https://github.com/dexarxbt/Lacuna/actions/workflows/verify.yml/badge.svg" alt="Repository verification status" /></a>
   </p>
+  <p><strong>Tech stack</strong></p>
+  <p>
+    <img src="https://img.shields.io/badge/TypeScript-7.0.2-3178C6?style=flat-square&amp;logo=typescript&amp;logoColor=white" alt="TypeScript 7.0.2" />
+    <img src="https://img.shields.io/badge/Node.js-22.12%2B-5FA04E?style=flat-square&amp;logo=nodedotjs&amp;logoColor=white" alt="Node.js 22.12 or newer" />
+    <img src="https://img.shields.io/badge/React-19.2.8-61DAFB?style=flat-square&amp;logo=react&amp;logoColor=0B1F2A" alt="React 19.2.8" />
+    <img src="https://img.shields.io/badge/Vite-8.2.2-646CFF?style=flat-square&amp;logo=vite&amp;logoColor=white" alt="Vite 8.2.2" />
+    <img src="https://img.shields.io/badge/Starknet-Mainnet-EC796B?style=flat-square&amp;logo=starknet&amp;logoColor=white" alt="Starknet Mainnet" />
+    <img src="https://img.shields.io/badge/STRK20_Wallet_API-0.10.3-6C47FF?style=flat-square" alt="STRK20 Wallet API 0.10.3" />
+    <img src="https://img.shields.io/badge/npm-workspaces-CB3837?style=flat-square&amp;logo=npm&amp;logoColor=white" alt="npm workspaces" />
+    <img src="https://img.shields.io/badge/node%3Atest-built--in-5FA04E?style=flat-square&amp;logo=nodedotjs&amp;logoColor=white" alt="Built-in Node.js test runner" />
+    <img src="https://img.shields.io/badge/Vercel-deployed-000000?style=flat-square&amp;logo=vercel&amp;logoColor=white" alt="Deployed on Vercel" />
+    <img src="https://img.shields.io/badge/GitHub_Actions-verified-2088FF?style=flat-square&amp;logo=githubactions&amp;logoColor=white" alt="Verified with GitHub Actions" />
+  </p>
 </div>
 
 ## Why Lacuna

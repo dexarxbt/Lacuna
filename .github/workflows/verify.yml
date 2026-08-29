@@ -41,7 +41,10 @@ jobs:
         if: failure()
         shell: bash
         run: |
-          log="$(tail -c 8000 verify.log)"
+          log="$(grep -E -B 3 -A 18 'not ok|ERR_ASSERTION|AssertionError|npm ERR!|error TS|^Error:' verify.log | tail -c 7000 || true)"
+          if [[ -z "$log" ]]; then
+            log="$(tail -c 3500 verify.log)"
+          fi
           log="${log//'%'/'%25'}"
           log="${log//$'\r'/'%0D'}"
           log="${log//$'\n'/'%0A'}"
